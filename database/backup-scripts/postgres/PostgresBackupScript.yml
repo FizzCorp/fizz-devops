@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  DBName:
+    Type: String
+  S3Path:
+    Type: String
+  DBPath:
+    Type: String
+  Username:
+    Type: String
+  Password:
+    Type: String
+Mappings:
+  AWSRegionAMI:
+    us-east-1: 
+      AMI: ami-0b898040803850657
+    us-east-2:
+      AMI: ami-0d8f6eb4f641ef691 
+    us-west-1:
+      AMI: ami-056ee704806822732
+    us-west-2:
+      AMI: ami-082b5a644766e0e6f
+    ap-southeast-2:
+      AMI:  ami-072a8da171a41d501
+Resources:
+  PostgresSnapshotRole:
+    Type: 'AWS::IAM::Role'
+    Description: Build Role to give EC2 instances access to take snapshot of aws services
+    Properties:
+      RoleName: PostgresSnapshotRole
+      Description: Allow EC2 instances to take snapshot of aws services and export to S3
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: es.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: 'CloudFormation SG test'
+      GroupName: !Sub '${AWS::StackName}-sg'
+  EC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-profile'
+      Path: /
+      Roles:
+        - !Ref PostgresSnapshotRole
+  Ec2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !FindInMap 
+          - AWSRegionAMI
+          - !Ref 'AWS::Region'
+          - AMI
+      InstanceInitiatedShutdownBehavior: "terminate"
+      InstanceType: "t2.micro"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+      SecurityGroupIds:
+        - !GetAtt 
+            - SecurityGroup
+            - GroupId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -e
+            yum install -y https://download.postgresql.org/pub/repos/yum/11/redhat/rhel-6-x86_64/postgresql11-libs-11.4-1PGDG.rhel6.x86_64.rpm
+            yum install -y https://download.postgresql.org/pub/repos/yum/11/redhat/rhel-6-x86_64/postgresql11-11.4-1PGDG.rhel6.x86_64.rpm
+            echo "#!/bin/bash" > /tmp/export.sh
+            echo "CURRENT_TS=\$(date +'%m_%d_%Y')" >> /tmp/export.sh
+            echo "PATH_POSTFIX=\$(date +'%m-%Y')" >> /tmp/export.sh
+            echo "S3_PATH=${S3Path}/\$PATH_POSTFIX" >> /tmp/export.sh
+            echo "DATABASE_PATH=${DBPath}" >> /tmp/export.sh
+            echo "DB_NAME=${DBName}"  >> /tmp/export.sh
+            echo "USERNAME1=${Username}" >> /tmp/export.sh
+            echo "PASSWORD1=${Password}"	>> /tmp/export.sh
+            echo "pg_dump --dbname=postgresql://\$USERNAME1:\$PASSWORD1@\$DATABASE_PATH:5432/\$DB_NAME -F t | aws s3 cp --storage-class STANDARD_IA - s3://\$S3_PATH/\$CURRENT_TS.sql" >> /tmp/export.sh
+            sh /tmp/export.sh
+            aws sns publish --region ${AWS::Region} --topic-arn arn:aws:sns:${AWS::Region}:${AWS::AccountId}:PostgressSnSTopic --message "Done" 

@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build and setup fizz api gateway beanstalk application
+Parameters:
+  FizzOfficeMainIP:
+    Description: Please enter fizz main net ip address
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    ConstraintDescription: must be a valid IP range of the form x.x.x.x.
+  FizzOfficeBackupIP:
+    Description: Please enter fizz backup net ip address
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    ConstraintDescription: must be a valid IP range of the form x.x.x.x.
+  ComponentsSG:
+    Description: Please select fizz components security group
+    Type: AWS::EC2::SecurityGroup::GroupName
+Resources:
+  APIGatewaySG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-fizz-gateway-sg'
+      GroupDescription: Fizz api gateway sg
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-gateway-sg'
+  APIGatewaySGISelf:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref APIGatewaySG
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt 
+        - APIGatewaySG
+        - GroupId
+      Description: Self
+  APIGatewaySGIOfficeMainIP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref APIGatewaySG
+      IpProtocol: -1
+      CidrIp: !Sub ${FizzOfficeMainIP}/32
+      Description: Fizz office ip
+  APIGatewaySGIOfficeBackupIP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref APIGatewaySG
+      IpProtocol: -1
+      CidrIp: !Sub ${FizzOfficeBackupIP}/32
+      Description: Fizz office ip
+  ComponentsSGIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      SourceSecurityGroupName: !Ref APIGatewaySG
+      Description: Fizz api gateway sg
+  ElasticBeanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties: 
+      ApplicationName: !Sub '${AWS::StackName}-fizz-api-gateway'
+      Description: Fizz api public interface
+  BeanstalkServiceRole:
+    Type: 'AWS::IAM::Role'
+    Description: Build elastic beanstalk service role for fizz api gateway
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-fizz-api-gateway-beanstalk-service-role'
+      Description: Fizz api gateway beanstalk service role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticbeanstalk.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': elasticbeanstalk
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy'
+        - 'arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth'
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Description: Build role for fizz api gateway
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-fizz-api-gateway-role'
+      Description: Fizz api gateway role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier'
+        - 'arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker'
+        - 'arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier'
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-fizz-cloud-watch-access'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                  - 'ec2:DescribeTags'
+                Resource: '*'
+  EC2InstanceProfile: 
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      InstanceProfileName: !Sub '${AWS::StackName}-fizz-api-gateway-profile'
+      Path: "/"
+      Roles: 
+        - !Ref EC2Role
+Outputs:
+  EC2InstanceProfile:
+    Description: Fizz api gateway instance profile name
+    Value: !Ref EC2InstanceProfile
+  ApiGatewayBeanstalkServiceRole:
+    Description: Fizz api gateway role
+    Value: !Ref BeanstalkServiceRole 

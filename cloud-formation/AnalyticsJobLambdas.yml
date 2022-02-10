@@ -1,0 +1,266 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Fizz Analytics Job Lambdas
+Parameters:
+  S3BucketName:
+    Description: Please enter s3 bucket name used by the lambda
+    Type: String
+    Default: com.fizz.prod.analytics
+    AllowedPattern: '^[a-z\.]*$'
+    ConstraintDescription: allowed values are a-z and . only
+  FullJobScheduleExpression:
+    Description: Please enter fizz ananlytics full job trigger cron expression
+    Type: String
+    Default: 00 4 1/1 * ? *
+  StreamProcessingJobScheduleExpression:
+    Description: Please enter fizz ananlytics stream processin job trigger cron expression
+    Type: String
+    Default: 00 16 1/1 * ? *
+  AnalyticsHbaseZookeeperPropertyClientport:
+    Description: Please enter analytics hbase zookeeper property clientport
+    Type: String
+    Default: 2181
+  AnalyticsHbaseZookeeperQourum:
+    Description: Please enter analytics hbase zookeeper qourum (e.g hbase.fizz-internal)
+    Type: String
+  AnalyticsInputMetricsRoot:
+    Description: Please enter analytics input metrics root
+    Type: String
+    Default: com.fizz.prod.analytics/data/prod/metrics/
+  AnalyticsJobEventProccessingDay:
+    Description: Please enter analytics job event proccessing day
+    Type: String
+    Default: -1
+  AnalyticsLogUri:
+    Description: Please enter analytics log url
+    Type: String
+  AnalyticsOutputMetricsRoot:
+    Description: Please enter analytics output metrics root
+    Type: String
+    Default: com.fizz.prod.analytics/data/prod/metrics/
+  AnalyticsSparkJobClass:
+    Description: Please enter analytics spark job class
+    Type: String
+    Default: io.fizz.analytics.ExportHiveMetricsToTSDBApp
+  AnalyticsSparkJobEsHost:
+    Description: Please enter analytics spark job es host
+    Type: String
+  AnalyticsSparkJobEsPort:
+    Description: Please enter analytics spark job es port
+    Type: String
+    Default: 443
+  AnalyticsSparkJobEsProtocol:
+    Description: Please enter analytics spark job es protocol
+    Type: String
+    Default: https
+  AnalyticsSparkJobHiveTableRoot:
+    Description: Please enter Analytics Spark Job Hive Table Root
+    Type: String
+    Default: com.fizz.prod.analytics/data/prod.v2
+  AnalyticsSparkJobJarLocation:
+    Description: Please enter analytics spark job jar location
+    Type: String
+    Default: com.fizz.prod.analytics/event-processing-1.0-SNAPSHOT.jar
+  AnalyticsSparkJobMaster:
+    Description: Please enter analytics spark job master
+    Type: String
+    Default: yarn
+  AnalyticsSparkJobTsdbHost:
+    Description: Please enter analytics spark job tsdb host (e.g hbase.fizz-internal)
+    Type: String
+  AnalyticsSparkJobTsdbPutThreashold:
+    Description: Please enter analytics spark job tsdb put threashold
+    Type: String
+    Default: 20
+  TextAnalysisAwsComprehendRegion:
+    Description: Please enter text analysis aws comprehend region
+    Type: String
+    Default: us-east-1
+  TextAnalysisClient:
+    Description: Please enter text analysis client
+    Type: String
+    Default: aws
+  GatewayKafkaServers:
+    Description: Please enter msk broker endpoints
+    Type: String
+  GatewayKafkaEventStreamTopic:
+    Description: Please enter name of kafka event stream topic
+    Type: String
+    Default: io.fizz.eventstream
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role for fizz analytics job
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-fizz-analyitcs-role
+      Description: Fizz analytics
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonElasticMapReduceFullAccess'
+        - 'arn:aws:iam::aws:policy/CloudWatchLogsFullAccess'
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-fizz-s3-bucket-access-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: Stmt1495119614000
+                Effect: Allow
+                Action: 
+                  - 's3:DeleteObject'
+                  - 's3:GetBucketAcl'
+                  - 's3:GetObject'
+                  - 's3:GetObjectAcl'
+                  - 's3:ListBucket'
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+  LambdaUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub ${AWS::StackName}-fizz-analytics-job-user
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+  LambdaUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName:
+        !Ref LambdaUser
+  FullJobLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Fizz analytics full job
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-fizz-analytics-full-jobs
+      Role: !GetAtt 
+        - LambdaRole
+        - Arn
+      Code: 
+        ZipFile: !Join 
+          - |+
+
+          - - 'exports.handler = async (event) => {'
+            - '    // TODO implement'
+            - 'const response = {'
+            - '    statusCode: 200,'
+            - '    body: JSON.stringify(''Hello from Lambda!''),'
+            - '    };'
+            - '    return response;'
+            - '};'
+      Environment:
+        Variables:
+          ANALYTICS_AWS_S3_ACCESS_KEY_ID : !Ref LambdaUserAccessKey
+          ANALYTICS_AWS_S3_SECRET_ACCESS_KEY : !GetAtt LambdaUserAccessKey.SecretAccessKey
+          ANALYTICS_HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT : !Ref AnalyticsHbaseZookeeperPropertyClientport
+          ANALYTICS_HBASE_ZOOKEEPER_QOURUM : !Ref AnalyticsHbaseZookeeperQourum
+          ANALYTICS_INPUT_METRICS_ROOT : !Ref AnalyticsInputMetricsRoot
+          ANALYTICS_JOB_EVENT_PROCCESSING_DAY : !Ref AnalyticsJobEventProccessingDay
+          ANALYTICS_LOG_URI : !Ref AnalyticsLogUri
+          ANALYTICS_OUTPUT_METRICS_ROOT : !Ref AnalyticsOutputMetricsRoot
+          ANALYTICS_SPARK_JOB_CLASS : !Ref AnalyticsSparkJobClass
+          ANALYTICS_SPARK_JOB_ES_HOST : !Ref AnalyticsSparkJobEsHost
+          ANALYTICS_SPARK_JOB_ES_PORT : !Ref AnalyticsSparkJobEsPort
+          ANALYTICS_SPARK_JOB_ES_PROTOCOL : !Ref AnalyticsSparkJobEsProtocol
+          ANALYTICS_SPARK_JOB_HIVE_TABLE_ROOT : !Ref AnalyticsSparkJobHiveTableRoot
+          ANALYTICS_SPARK_JOB_JAR_LOCATION : !Ref AnalyticsSparkJobJarLocation
+          ANALYTICS_SPARK_JOB_MASTER : !Ref AnalyticsSparkJobMaster
+          ANALYTICS_SPARK_JOB_TSDB_HOST : !Ref AnalyticsSparkJobTsdbHost
+          ANALYTICS_SPARK_JOB_TSDB_PUT_THREASHOLD : !Ref AnalyticsSparkJobTsdbPutThreashold
+          TEXT_ANALYSIS_AWS_COMPREHEND_REGION : !Ref TextAnalysisAwsComprehendRegion
+          TEXT_ANALYSIS_CLIENT : !Ref TextAnalysisClient
+          GATEWAY_KAFKA_SERVERS: !Ref GatewayKafkaServers
+          GATEWAY_KAFKA_EVENT_STREAM_TOPIC: !Ref GatewayKafkaEventStreamTopic
+      Timeout: 300
+      Runtime: nodejs12.x
+  TriggerFullJob:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Fizz analytics full job trigger
+      Name: !Sub ${AWS::StackName}-fizz-analytics-full-job-trigger
+      ScheduleExpression: !Sub cron(${FullJobScheduleExpression})
+      Targets: 
+        - Arn: !GetAtt 
+          - FullJobLambda
+          - Arn
+          Id: FizzFullJobLambda
+  PermissionToInvokeFullJobLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref FullJobLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt: 
+          - TriggerFullJob
+          - Arn
+  StreamProcessingJobLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Fizz analytics stream processing job only
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-fizz-analytics-stream-processing-job
+      Role: !GetAtt 
+        - LambdaRole
+        - Arn
+      Code: 
+        ZipFile: !Join 
+          - |+
+
+          - - 'exports.handler = async (event) => {'
+            - '    // TODO implement'
+            - 'const response = {'
+            - '    statusCode: 200,'
+            - '    body: JSON.stringify(''Hello from Lambda!''),'
+            - '    };'
+            - '    return response;'
+            - '};'
+      Environment:
+        Variables:
+          ANALYTICS_AWS_S3_ACCESS_KEY_ID : !Ref LambdaUserAccessKey
+          ANALYTICS_AWS_S3_SECRET_ACCESS_KEY : !GetAtt LambdaUserAccessKey.SecretAccessKey
+          ANALYTICS_HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT : !Ref AnalyticsHbaseZookeeperPropertyClientport
+          ANALYTICS_HBASE_ZOOKEEPER_QOURUM : !Ref AnalyticsHbaseZookeeperQourum
+          ANALYTICS_INPUT_METRICS_ROOT : !Ref AnalyticsInputMetricsRoot
+          ANALYTICS_JOB_EVENT_PROCCESSING_DAY : !Ref AnalyticsJobEventProccessingDay
+          ANALYTICS_LOG_URI : !Ref AnalyticsLogUri
+          ANALYTICS_OUTPUT_METRICS_ROOT : !Ref AnalyticsOutputMetricsRoot
+          ANALYTICS_SPARK_JOB_CLASS : !Ref AnalyticsSparkJobClass
+          ANALYTICS_SPARK_JOB_ES_HOST : !Ref AnalyticsSparkJobEsHost
+          ANALYTICS_SPARK_JOB_ES_PORT : !Ref AnalyticsSparkJobEsPort
+          ANALYTICS_SPARK_JOB_ES_PROTOCOL : !Ref AnalyticsSparkJobEsProtocol
+          ANALYTICS_SPARK_JOB_HIVE_TABLE_ROOT : !Ref AnalyticsSparkJobHiveTableRoot
+          ANALYTICS_SPARK_JOB_JAR_LOCATION : !Ref AnalyticsSparkJobJarLocation
+          ANALYTICS_SPARK_JOB_MASTER : !Ref AnalyticsSparkJobMaster
+          ANALYTICS_SPARK_JOB_TSDB_HOST : !Ref AnalyticsSparkJobTsdbHost
+          ANALYTICS_SPARK_JOB_TSDB_PUT_THREASHOLD : !Ref AnalyticsSparkJobTsdbPutThreashold
+          TEXT_ANALYSIS_AWS_COMPREHEND_REGION : !Ref TextAnalysisAwsComprehendRegion
+          TEXT_ANALYSIS_CLIENT : !Ref TextAnalysisClient
+          GATEWAY_KAFKA_SERVERS: !Ref GatewayKafkaServers
+          GATEWAY_KAFKA_EVENT_STREAM_TOPIC: !Ref GatewayKafkaEventStreamTopic
+      Timeout: 300
+      Runtime: nodejs12.x
+  TriggerStreamProcessingJob:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Fizz analytics stream processing job trigger
+      Name: !Sub ${AWS::StackName}-fizz-analytics-stream-processing-job-trigger
+      ScheduleExpression: !Sub cron(${StreamProcessingJobScheduleExpression})
+      Targets: 
+        - Arn: !GetAtt 
+          - StreamProcessingJobLambda
+          - Arn
+          Id: FizzStreamProcessingJobLambda
+  PermissionToInvokeStreamProcessingJobLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref StreamProcessingJobLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt: 
+          - TriggerStreamProcessingJob
+          - Arn
+  

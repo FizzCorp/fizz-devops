@@ -1,0 +1,5 @@
+<rules>
+ <rule action="route" table="chat_dev:tbl_message" columnFamily="e" topic="io.fizz.chat.events" /> 
+ <rule action="route" table="chat_group_dev:tbl_group" columnFamily="es" topic="io.fizz.chat.group" /> 
+</rules>
+

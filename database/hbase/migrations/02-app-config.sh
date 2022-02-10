@@ -1,0 +1,13 @@
+NAMESPACE=$1
+HBASE_CLI="hbase"
+
+# chat moderation
+NS_CHAT_MOD="chat_mod_$NAMESPACE"
+TABLE_CHAT_MOD_APP_CONFIG="tbl_config"
+CF_PROVIDER_CONFIG_CONTENT="pc"
+
+exec "$HBASE_CLI" shell <<EOF
+create_namespace '$NS_CHAT_MOD'
+
+create '$NS_CHAT_MOD:$TABLE_CHAT_MOD_APP_CONFIG', {NAME => '$CF_PROVIDER_CONFIG_CONTENT', VERSIONS => 1 }
+EOF

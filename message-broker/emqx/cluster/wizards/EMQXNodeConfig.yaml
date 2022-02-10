@@ -1,0 +1,43 @@
+#cloud-config
+# Update and upgrade packages
+repo_update: true
+repo_upgrade: all
+
+# Run the following commands in orders.
+runcmd:
+
+# Setting environment variable
+- REGION=`ec2-metadata --availability-zone | awk '{print substr($2, 1, length($2)-1)}'`
+- INSTANCE_ID=`ec2-metadata --instance-id | awk '{print substr($2, 1, length($2))}'`
+- INSTANCE_NAME=`/usr/local/bin/aws autoscaling describe-auto-scaling-instances --region $REGION --output text --query "AutoScalingInstances[?InstanceId=='$INSTANCE_ID'].AutoScalingGroupName" | awk '{print}'`
+- INSTANCE_IP=$(curl -s http://instance-data/latest/meta-data/local-ipv4)
+- AUTO_SCALING_OTHER_INSTANCE_IP=`/usr/local/bin/aws autoscaling describe-auto-scaling-instances --region $REGION --output text --query "AutoScalingInstances[?AutoScalingGroupName=='$INSTANCE_NAME'].InstanceId" | xargs -n1 /usr/local/bin/aws ec2 describe-instances --instance-ids $ID --region $REGION --query "Reservations[].Instances[?PrivateIpAddress!='$INSTANCE_IP'].PrivateIpAddress[]" --output text | head -n1 | awk '{print $1;}'`
+- /usr/local/bin/aws configure set default.region $REGION
+- /usr/local/bin/aws configure set default.output text
+
+# Cluster Configurations
+- sed -i "/node.name = emqx@127.0.0.1/c\node.name = emqx@$INSTANCE_IP" /etc/emqx/emqx.conf
+- sed -i "/node.cookie = emqxsecretcookie/c\node.cookie = %ERLANG_COOKIE%" /etc/emqx/emqx.conf
+# ACL Configuration
+- sed -i "/zone.external.session_expiry_interval/c\zone.external.session_expiry_interval = %SESSION_TTL%m" /etc/emqx/emqx.conf
+- sed -i "/acl_cache_ttl = /c\acl_cache_ttl = %AUTH_CACHE_TTL%m" /etc/emqx/emqx.conf
+
+# Start Broker
+- emqx restart
+
+# Initial HOME 
+- export HOME=/root
+
+# Join the cluster
+- emqx_ctl cluster join "emqx@$AUTO_SCALING_OTHER_INSTANCE_IP"
+
+# run fizz emqx chat service service
+- docker image pull %FIZZ_EMQX_CHAT_IMAGE_URL%
+- docker container run -d --restart unless-stopped -p 3010:3010 -p 5000:5000 --name eqmx-chat-service -e CHAT_PUBSUB_EMQX_HOST=172.17.0.1 -e CHAT_EMQX_MOCK_SESSION_STORES=false -e HBASE_CLIENT_QUORUM=%HBASE_CLIENT_QUORUM% -e CHAT_EMQX_MOCK_PRESENCE_REPO=false -e REDIS_HOST=%REDIS_HOST% -e CHAT_EMQX_HTTP_DEBUG_LOGGING=true %FIZZ_EMQX_CHAT_IMAGE_URL%
+
+# run metrics service
+- docker image pull %METRICS_IMAGE_URL%
+- docker container run -d --restart unless-stopped -p 9000:9000 --name emqx-node-metrics-exporter -e USERNAME=admin -e PASSWORD=public -e EMQX_VERSION=v4 -e EMQX_NAME=emqx -e EMQX_HOST=$INSTANCE_IP -e EMQX_ENDPOINT=http://172.17.0.1:18083 %METRICS_IMAGE_URL%
+
+# Reboot Node to apply changes
+- reboot

@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy fizz elasticsearch delete old data job lambda
+Parameters:
+  ElasticSearchVpcEndpoint:
+    Description: Please enter fizz elasticsearch vpc endpoint
+    Type: String
+  JobScheduleExpression:
+    Description: Please enter fizz elasticsearch delete old data job trigger cron expression
+    Type: String
+    Default: 00 08 * * ? *
+  ElasticSearchSG:
+    Description: Please select fizz elasticsearch security group
+    Type: AWS::EC2::SecurityGroup::Id
+  ElasticSearchSubnetIds:
+    Description: Please enter the subnet ids of elastic search domain
+    Type: List<AWS::EC2::Subnet::Id>
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role for fizz es delete old data job 
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-fizz-es-delete-old-data-job-role
+      Description: fizz es delete old data job role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+  FizzElasticSearchDeleteOldDataJobLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Fizz elasticsearch delete old data job
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-fizz-es-delete-old-data-job
+      Role: !GetAtt 
+        - LambdaRole
+        - Arn
+      Code:
+        ZipFile: |
+          import os
+          import http.client
+          import json
+          from datetime import datetime, timedelta, timezone
+
+          vpc_endpoint = os.environ["VPC_ENDPOINT"]
+          delete_days = 90
+
+          def handler(event, context):
+              conn = http.client.HTTPSConnection(vpc_endpoint)
+              payload = json.dumps({
+                "query": {
+                  "range": {
+                    "timestamp": {
+                      "lte": int((datetime.now(timezone.utc) - timedelta(delete_days)).timestamp() *1000)
+                    }
+                  }
+                }
+              })
+              headers = {
+                'Content-Type': 'application/json'
+              }
+              print(payload)
+              conn.request("POST", "/text_messages/_delete_by_query", payload, headers)
+              res = conn.getresponse()
+              data = res.read()
+              print(data.decode("utf-8"))
+      Environment:
+        Variables:
+          VPC_ENDPOINT : !Ref ElasticSearchVpcEndpoint
+      Timeout: 30
+      Runtime:  python3.8
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref ElasticSearchSG
+        SubnetIds: !Ref ElasticSearchSubnetIds
+  TriggerFizzElasticSearchDeleteOldDataJob:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Fizz es delete old data job trigger
+      Name: !Sub ${AWS::StackName}-fizz-es-delete-old-data-job-trigger
+      ScheduleExpression: !Sub cron(${JobScheduleExpression})
+      Targets: 
+        - Arn: !GetAtt 
+          - FizzElasticSearchDeleteOldDataJobLambda
+          - Arn
+          Id: FizzElasticSearchDeleteOldDataJobLambda
+  PermissionToInvokeFizzElasticSearchDeleteOldDataJobLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref FizzElasticSearchDeleteOldDataJobLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt: 
+          - TriggerFizzElasticSearchDeleteOldDataJob
+          - Arn
+  LogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-fizz-es-delete-old-data-job"
+      RetentionInDays: 7
+ 

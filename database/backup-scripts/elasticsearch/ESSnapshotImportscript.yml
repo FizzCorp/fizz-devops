@@ -1,0 +1,142 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  Region:
+    Type: String
+  EsRestoreEndpoint:
+    Type: String
+  S3Name:
+    Type: String
+  ESSecurityGroupName:
+    Type: String
+  KeyName:
+    Type: String
+Mappings:
+  AWSRegionAMI:
+    us-east-1: 
+      AMI: ami-0b898040803850657
+    us-east-2:
+      AMI: ami-0d8f6eb4f641ef691 
+    us-west-1:
+      AMI: ami-056ee704806822732
+    us-west-2:
+      AMI: ami-082b5a644766e0e6f
+    ap-southeast-2:
+      AMI:  ami-072a8da171a41d501
+Resources:
+  ESImportScriptSnapshotRole:
+    Type: 'AWS::IAM::Role'
+    Description: Build Role to give EC2 instances access to take snapshot of aws services
+    Properties:
+      RoleName: ESImportScriptSnapshotRole
+      Description: Allow EC2 instances to take snapshot of aws services and export to S3
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: es.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+      Policies:
+        - PolicyName: snapshot-role-aws-services-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'es:ESHttpPut'
+                Resource: '*'
+        - PolicyName: snapshot-role-es-aws-services-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${S3Name}'
+              - Effect: Allow
+                Action: 
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: !Sub 'arn:aws:s3:::${S3Name}/*'
+  SnapshotESImportAssumePolicy:
+    Type: 'AWS::IAM::Policy'
+    Description: Policy to pass role access to ESSnapshotRole
+    Properties:
+      PolicyName: snapshot-role-es-pass-role-policy-import
+      Roles:
+          - ESImportScriptSnapshotRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+         - Effect: Allow
+           Action: 'iam:PassRole'
+           Resource: !GetAtt 
+              - ESImportScriptSnapshotRole
+              - Arn
+  SecurityGroupESimport:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: 'CloudFormation SG test'
+      GroupName: !Sub '${AWS::StackName}-sg'
+  EC2ESimportInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-profile'
+      Path: /
+      Roles:
+        - !Ref ESImportScriptSnapshotRole
+  Ec2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !FindInMap 
+          - AWSRegionAMI
+          - !Ref 'AWS::Region'
+          - AMI
+      InstanceInitiatedShutdownBehavior: "terminate"
+      InstanceType: "t2.micro"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+      SecurityGroupIds:
+        - !GetAtt 
+            - SecurityGroupESimport
+            - GroupId
+        - !Ref ESSecurityGroupName
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref EC2ESimportInstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -e
+            yum install -y python3
+            yum install -y python-pip
+            pip install boto3
+            pip install requests_aws4auth
+            pip install datetime
+            echo "import boto3" >/tmp/SnapshotRestore.py
+            echo "import requests" >>/tmp/SnapshotRestore.py
+            echo "from requests_aws4auth import AWS4Auth" >>/tmp/SnapshotRestore.py
+            echo "from datetime import date">>/tmp/SnapshotRestore.py
+            echo "host='${EsRestoreEndpoint}'">>/tmp/SnapshotRestore.py
+            echo "region ='${Region}'">>/tmp/SnapshotRestore.py
+            echo "service ='es'">>/tmp/SnapshotRestore.py
+            echo "credentials = boto3.Session().get_credentials()">>/tmp/SnapshotRestore.py
+            echo "awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, service, session_token=credentials.token)">>/tmp/SnapshotRestore.py
+            echo "today = date.today()" >>/tmp/SnapshotRestore.py
+            echo "day = today.strftime('%d-%m-%y')" >>/tmp/SnapshotRestore.py
+            echo "path = '/_snapshot/snapshot-repository/snapshot_' + day + '/_restore'">>/tmp/SnapshotRestore.py
+            echo "url = host + path">>/tmp/SnapshotRestore.py
+            echo "payload = {'indices':'text_messages,report_messages'}">>/tmp/SnapshotRestore.py
+            echo "headers = {'Content-Type':'application/json'}">>/tmp/SnapshotRestore.py
+            echo "r = requests.post(url, auth=awsauth, json=payload, headers=headers)" >>/tmp/SnapshotRestore.py
+            echo "print(r.text)" >>/tmp/SnapshotRestore.py
+            python /tmp/SnapshotRestore.py
+            pip install --upgrade awscli 
+            aws sns publish --region ${AWS::Region} --topic-arn arn:aws:sns:${AWS::Region}:${AWS::AccountId}:EsRestoreSnSTopic --message "Done"

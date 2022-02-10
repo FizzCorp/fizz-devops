@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy elasticSearch domain
+Parameters:
+  ElasticSearchInstanceType:
+    Description: Please select the compute and memory capacity of the nodes in the Elastic Search Domain
+    Type: String
+    Default: t3.small.elasticsearch
+    AllowedValues:
+      - t3.small.elasticsearch
+      - r5.large.elasticsearch
+      - r5.2xlarge.elasticsearch
+      - r5.4xlarge.elasticsearch
+    ConstraintDescription: must select a valid Cache Node type.
+  ElasticSearchSubnetId:
+    Description: Please select the subnet id for elastic search domain
+    Type: AWS::EC2::Subnet::Id
+  ComponentsSG:
+    Description: Please select fizz components security group
+    Type: AWS::EC2::SecurityGroup::Id 
+Resources:
+  ElasticsearchDomain:
+    Type: AWS::Elasticsearch::Domain
+    Properties: 
+      DomainName: !Sub '${AWS::StackName}-fizz-analytics'
+      EBSOptions: 
+        EBSEnabled: true
+        VolumeSize: 20
+        VolumeType: gp2
+      ElasticsearchClusterConfig:  
+        InstanceCount: 1
+        InstanceType: !Ref ElasticSearchInstanceType
+      ElasticsearchVersion: '6.8'
+      AccessPolicies:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: 'es:*'
+            Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${AWS::StackName}-fizz-analytics/*
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'true'
+      SnapshotOptions: 
+        AutomatedSnapshotStartHour: '0'
+      VPCOptions: 
+        SubnetIds: 
+          - !Ref ElasticSearchSubnetId
+        SecurityGroupIds:
+          - !Ref ComponentsSG
+Outputs:
+  ESDomainArn:
+    Description: Elastic search domain arn
+    Value: !GetAtt ElasticsearchDomain.DomainArn
+  ESDomainEndpoint:
+    Description: Elastic search domain endPoint
+    Value: 
+      !Sub
+        - https://${ESEndPoint}
+        - ESEndPoint: !GetAtt ElasticsearchDomain.DomainEndpoint

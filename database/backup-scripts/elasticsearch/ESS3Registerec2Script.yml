@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  Region:
+    Type: String
+  S3Name:
+    Type: String
+  EsEndpoint:
+    Type: String
+  ESSecurityGroupName:
+    Type: String
+  KeyName:
+    Type: String
+Mappings:
+  AWSRegionAMI:
+    us-east-1: 
+      AMI: ami-0b898040803850657
+    us-east-2:
+      AMI: ami-0d8f6eb4f641ef691 
+    us-west-1:
+      AMI: ami-056ee704806822732
+    us-west-2:
+      AMI: ami-082b5a644766e0e6f
+    ap-southeast-2:
+      AMI:  ami-072a8da171a41d501
+Resources:
+  ESSnapshotRole:
+    Type: 'AWS::IAM::Role'
+    Description: Build Role to give EC2 instances access to take snapshot of aws services
+    Properties:
+      RoleName: ESSnapshotRole
+      Description: Allow EC2 instances to take snapshot of aws services and export to S3
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: es.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+      Policies:
+        - PolicyName: snapshot-role-aws-services-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'es:ESHttpPut'
+                Resource: '*'
+        - PolicyName: snapshot-role-es-aws-services-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${S3Name}'
+              - Effect: Allow
+                Action: 
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: !Sub 'arn:aws:s3:::${S3Name}/*'
+  SnapshotESAssumePolicy:
+    Type: 'AWS::IAM::Policy'
+    Description: Policy to pass role access to ESSnapshotRole
+    Properties:
+      PolicyName: snapshot-role-es-pass-role-policy
+      Roles:
+          - ESSnapshotRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+         - Effect: Allow
+           Action: 'iam:PassRole'
+           Resource: !GetAtt 
+              - ESSnapshotRole
+              - Arn
+  RegSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: 'CloudFormation SG test'
+      GroupName: !Sub '${AWS::StackName}-sg'
+  EC2ESInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-profile'
+      Path: /
+      Roles:
+        - !Ref ESSnapshotRole
+  Ec2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !FindInMap 
+          - AWSRegionAMI
+          - !Ref 'AWS::Region'
+          - AMI
+      InstanceInitiatedShutdownBehavior: "terminate"
+      InstanceType: "t2.micro"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+      SecurityGroupIds:
+        - !GetAtt 
+            - RegSecurityGroup
+            - GroupId
+        - !Ref ESSecurityGroupName
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref EC2ESInstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -e
+            yum install -y python3
+            yum install -y python-pip
+            pip install boto3
+            pip install requests_aws4auth
+            echo "import boto3" >/tmp/RegisterBucket.py
+            echo "import requests" >>/tmp/RegisterBucket.py
+            echo "from requests_aws4auth import AWS4Auth" >>/tmp/RegisterBucket.py
+            echo "host= '${EsEndpoint}'">>/tmp/RegisterBucket.py
+            echo "region = '${Region}'">>/tmp/RegisterBucket.py
+            echo "service = 'es'">>/tmp/RegisterBucket.py
+            echo "credentials = boto3.Session().get_credentials()">>/tmp/RegisterBucket.py
+            echo "awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, service, session_token=credentials.token)">>/tmp/RegisterBucket.py
+            echo "path = '/_snapshot/snapshot-repository'">>/tmp/RegisterBucket.py
+            echo "url = host + path">>/tmp/RegisterBucket.py
+            echo "payload = {" >>/tmp/RegisterBucket.py
+            echo "'type':'s3'," >>/tmp/RegisterBucket.py
+            echo "'settings':{" >>/tmp/RegisterBucket.py
+            echo "'bucket':'${S3Name}'," >>/tmp/RegisterBucket.py
+            echo "'region':'${Region}'," >>/tmp/RegisterBucket.py
+            echo "'role_arn':'${ESSnapshotRole.Arn}'" >>/tmp/RegisterBucket.py
+            echo "}" >>/tmp/RegisterBucket.py
+            echo "}" >>/tmp/RegisterBucket.py
+            echo "headers = {'Content-Type':'application/json'}" >>/tmp/RegisterBucket.py
+            echo "r = requests.put(url, auth=awsauth, json=payload, headers=headers)" >>/tmp/RegisterBucket.py
+            echo "print(r.status_code)" >>/tmp/RegisterBucket.py
+            echo "print(r.text)" >>/tmp/RegisterBucket.py
+            python /tmp/RegisterBucket.py
+            aws sns publish --region ${AWS::Region} --topic-arn arn:aws:sns:${AWS::Region}:${AWS::AccountId}:EsRegisterSnSTopic --message "Done"

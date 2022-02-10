@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build route53 hosted zone and dns records
+Parameters:
+  VPCId:
+    Description: Please select a vpc id for hosted zone
+    Type: AWS::EC2::VPC::Id
+  HbaseMasterPrivateDNS:
+    Description: Please enter hbase master private dns
+    Type: String
+    Default: 192.0.2.99
+  EmqxPrivateLoadBalancerDnsName:
+    Description: Please enter emqx private load balancer dns name
+    Type: String
+    Default: 192.0.2.99
+  RedisPrimaryEndpoint:
+    Description: Please enter redis primary endpoint
+    Type: String
+Resources:
+  Route53SG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-fizz-internal-r53-sg'
+      GroupDescription: Security group that allows aws route53 ip on specific ports
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-internal-r53-sg'
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.245.168.0/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.243.31.192/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 177.71.207.128/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.255.254.192/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 15.177.0.0/18
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.244.52.192/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 176.34.159.192/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.251.31.128/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.183.255.128/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.241.32.64/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.252.254.192/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 107.23.255.0/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.248.220.0/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.228.16.0/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.250.253.192/2
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.232.40.64/26
+        Description: Route53 Health Check IP
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        ToPort: 4242
+        FromPort: 4242
+        CidrIp: 54.252.79.128/26
+        Description: Route53 Health Check IP
+  InternalHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      HostedZoneConfig: 
+        Comment: Fizz Private DNS
+      Name: !Sub '${AWS::StackName}-fizz-internal'
+      VPCs: 
+        - VPCId: !Ref VPCId
+          VPCRegion: !Sub ${AWS::Region}
+  HbaseDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZone
+      Comment: Hbase internal IP
+      Name: !Sub hbase.${AWS::StackName}-fizz-internal
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+        - !Ref HbaseMasterPrivateDNS
+  EmqxDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZone
+      Comment: Emqx dns record
+      Name: !Sub emqx.${AWS::StackName}-fizz-internal
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+        - !Ref EmqxPrivateLoadBalancerDnsName
+  RedisDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZone
+      Comment: Redis dns record
+      Name: !Sub redis.${AWS::StackName}-fizz-internal
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+        - !Ref RedisPrimaryEndpoint
+Outputs:
+  HBaseCNAME:
+    Description: Hbase dns record
+    Value:
+      !Ref HbaseDNSRecord
+  EmqxCNAME:
+    Description: Emqx dns record
+    Value:
+      !Ref EmqxDNSRecord
+  RedisCNAME:
+    Description: Redis dns record
+    Value:
+      !Ref RedisDNSRecord

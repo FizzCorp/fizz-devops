@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Fizz Alert Dispatcher Lambda
+Parameters:
+  ScheduleExpression:
+    Description: Please enter fizz alert dispatcher trigger cron expression
+    Type: String
+    Default: 00 6 1/1 * ? *
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role for fizz alert dispatcher
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-fizz-alert-dispatcher-role
+      Description: fizz alert dispatcher
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-fizz-alert-dispatcher-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Chat messages slack dispatcher
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-fizz-alert-dispatcher
+      Role: !GetAtt 
+        - LambdaRole
+        - Arn
+      Code: 
+        ZipFile: !Join 
+          - |+
+
+          - - '''use strict'';'
+            -  const got = require('got');
+            -  const serviceUrl = 'https://console.fizz.io/api/alerts/dispatch';
+            - ''
+            - 'exports.handler = (event, context, callback) => {'
+            - '  got(serviceUrl, {'
+            - '    body: '''','
+            - '    timeout: 30000,// 30 seconds'
+            - '    method: ''POST'','
+            - '    headers: { ''Content-Type'': ''application/json'' }'
+            - '  })'
+            - '  .then((response) => {'
+            - '    console.log(''Successfully Dispatched!'');'
+            - '    callback(null, ''Finished'');'
+            - '    // const resJson = JSON.parse(response.body);'
+            - ''   
+            - '    // let logMsg = resJson.message;'
+            - '    // const logBody = resJson.errors || resJson.data;'
+            - ''   
+            - '    // console.log(`${logMsg}: ${JSON.stringify(logBody)}`);'
+            - '    // callback(null, ''Finished'');// to avoid retries'
+            - '  })'
+            - '  .catch((error) => {'
+            - '    // const errorMsg = error.message || `${error}`'
+            - '    console.log(''Error in dispatch'');'
+            - '    callback(null);// to avoid retries'
+            - '  });'
+            - '};'
+            
+      Timeout: 300
+      Runtime: nodejs12.x
+  Trigger:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Fizz Alert Dispatcher Trigger
+      Name: !Sub ${AWS::StackName}-fizz-alert-dispatcher-trigger
+      ScheduleExpression: !Sub cron(${ScheduleExpression})
+      Targets: 
+        - Arn: !GetAtt 
+          - Lambda
+          - Arn
+          Id: FizzAlertDispatcher
+  PermissionToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref Lambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt: 
+          - Trigger
+          - Arn
+Outputs:
+  LambdaArn:
+    Value: !GetAtt 
+      - Lambda
+      - Arn

@@ -1,0 +1,6 @@
+hbase.backup.enable=true
+hbase.master.logcleaner.plugins=org.apache.hadoop.hbase.backup.master.BackupLogCleaner
+hbase.procedure.master.classes=org.apache.hadoop.hbase.backup.master.LogRollMasterProcedureManager
+hbase.procedure.regionserver.classes=org.apache.hadoop.hbase.backup.regionserver.LogRollRegionServerProcedureManager
+hbase.master.hfilecleaner.plugins=org.apache.hadoop.hbase.backup.BackupHFileCleaner
+hbase.coprocessor.region.classes=org.apache.hadoop.hbase.backup.BackupObserver

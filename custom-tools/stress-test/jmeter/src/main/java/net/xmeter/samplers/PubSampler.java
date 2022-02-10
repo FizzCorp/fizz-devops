@@ -1,0 +1,241 @@
+package net.xmeter.samplers;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.text.MessageFormat;
+import java.util.Objects;
+import java.util.logging.Logger;
+
+import javax.xml.bind.DatatypeConverter;
+
+import net.xmeter.SubBean;
+import org.apache.jmeter.samplers.Entry;
+import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.threads.JMeterContextService;
+import org.apache.jmeter.threads.JMeterVariables;
+import org.fusesource.hawtbuf.Buffer;
+import org.fusesource.hawtbuf.UTF8Buffer;
+import org.fusesource.mqtt.client.CallbackConnection;
+import org.fusesource.mqtt.client.Listener;
+import org.fusesource.mqtt.client.QoS;
+
+import net.xmeter.Util;
+
+public class PubSampler extends AbstractMQTTSampler {
+	private static final long serialVersionUID = 4312341622759500786L;
+	private static final Logger logger = Logger.getLogger(PubSampler.class.getCanonicalName());
+	
+	private transient CallbackConnection connection = null;
+	private String payload = null;
+	private QoS qos_enum = QoS.AT_MOST_ONCE;
+	private String topicName = "";
+	private boolean retainedMsg = false;
+
+	public String getQOS() {
+		return getPropertyAsString(QOS_LEVEL, String.valueOf(QOS_0));
+	}
+
+	public void setQOS(String qos) {
+		setProperty(QOS_LEVEL, qos);
+	}
+
+	public String getTopic() {
+		return getPropertyAsString(TOPIC_NAME, DEFAULT_TOPIC_NAME);
+	}
+
+	public void setTopic(String topicName) {
+		setProperty(TOPIC_NAME, topicName);
+	}
+
+	public boolean isAddTimestamp() {
+		return getPropertyAsBoolean(ADD_TIMESTAMP);
+	}
+
+	public void setAddTimestamp(boolean addTimestamp) {
+		setProperty(ADD_TIMESTAMP, addTimestamp);
+	}
+
+	public String getMessageType() {
+		return getPropertyAsString(MESSAGE_TYPE, MESSAGE_TYPE_RANDOM_STR_WITH_FIX_LEN);
+	}
+
+	public void setMessageType(String messageType) {
+		setProperty(MESSAGE_TYPE, messageType);
+	}
+
+	public String getMessageLength() {
+		return getPropertyAsString(MESSAGE_FIX_LENGTH, DEFAULT_MESSAGE_FIX_LENGTH);
+	}
+
+	public void setMessageLength(String length) {
+		setProperty(MESSAGE_FIX_LENGTH, length);
+	}
+
+	public String getMessage() {
+		return getPropertyAsString(MESSAGE_TO_BE_SENT, "");
+	}
+
+	public void setMessage(String message) {
+		setProperty(MESSAGE_TO_BE_SENT, message);
+	}
+	
+	public void setRetainedMessage(Boolean retained) {
+		setProperty(RETAINED_MESSAGE, retained);
+	}
+	
+	public Boolean getRetainedMessage() {
+		return getPropertyAsBoolean(RETAINED_MESSAGE, false);
+	}
+
+	public static byte[] hexToBinary(String hex) {
+	    return DatatypeConverter.parseHexBinary(hex);
+	}
+	
+	@Override
+	public SampleResult sample(Entry arg0) {
+		SampleResult result = new SampleResult();
+		result.setSampleLabel(getName());
+	
+		JMeterVariables vars = JMeterContextService.getContext().getVariables();
+		connection = (CallbackConnection) vars.getObject("conn");
+		UTF8Buffer clientId = (UTF8Buffer) vars.getObject("clientId");
+		if (connection == null) {
+			result.sampleStart();
+			result.setSuccessful(false);
+			result.setResponseMessage("Publish: Connection not found.");
+			result.setResponseData("Publish failed because connection is not established.".getBytes());
+			result.setResponseCode("500");
+			result.sampleEnd(); // avoid endtime=0 exposed in trace log
+			return result;
+		}
+		
+		byte[] toSend = new byte[]{};
+		try {
+			byte[] tmp = new byte[]{};
+
+			if (MESSAGE_TYPE_HEX_STRING.equals(getMessageType())) {
+				tmp = hexToBinary(getMessage());
+			} else if (MESSAGE_TYPE_STRING.equals(getMessageType())) {
+				tmp = getMessage().getBytes();
+			} else if(MESSAGE_TYPE_RANDOM_STR_WITH_FIX_LEN.equals(getMessageType())) {
+				if (payload == null) {
+					payload = Util.generatePayload(Integer.parseInt(getMessageLength()));
+				}
+				tmp = payload.getBytes();
+			}
+
+			
+			int qos = Integer.parseInt(getQOS());
+			switch (qos) {
+			case 0:
+				qos_enum = QoS.AT_MOST_ONCE;
+				break;
+			case 1:
+				qos_enum = QoS.AT_LEAST_ONCE;
+				break;
+			case 2:
+				qos_enum = QoS.EXACTLY_ONCE;
+				break;
+			default:
+				break;
+			}
+			
+			topicName = getTopic();
+//			setListener(vars);
+			retainedMsg = getRetainedMessage();
+			if (isAddTimestamp()) {
+				byte[] timePrefix = (System.currentTimeMillis() + TIME_STAMP_SEP_FLAG).getBytes();
+				toSend = new byte[timePrefix.length + tmp.length];
+				System.arraycopy(timePrefix, 0, toSend, 0, timePrefix.length);
+				System.arraycopy(tmp, 0, toSend, timePrefix.length , tmp.length);
+			} else {
+				toSend = new byte[tmp.length];
+				System.arraycopy(tmp, 0, toSend, 0 , tmp.length);
+			}
+			
+			result.sampleStart();
+			final Object pubLock = new Object();
+			PubCallback pubCallback = new PubCallback(pubLock, qos_enum);
+			logger.fine("pub [topic]: " + topicName + ", [payload]: " + new String(toSend));
+			
+			if(qos_enum == QoS.AT_MOST_ONCE) { 
+				//For QoS == 0, the callback is the same thread with sampler thread, so it cannot use the lock object wait() & notify() in else block;
+				//Otherwise the sampler thread will be blocked.
+				connection.publish(topicName, toSend, qos_enum, retainedMsg, pubCallback);
+			} else {
+				synchronized (pubLock) {
+					connection.publish(topicName, toSend, qos_enum, retainedMsg, pubCallback);
+					pubLock.wait();
+				}
+			}
+			
+			result.sampleEnd();
+			result.setSamplerData(new String(toSend));
+			result.setSentBytes(toSend.length);
+			result.setLatency(result.getEndTime() - result.getStartTime());
+			result.setSuccessful(pubCallback.isSuccessful());
+			
+			if(pubCallback.isSuccessful()) {
+				result.setResponseData("Publish successfuly.".getBytes());
+				result.setResponseMessage(MessageFormat.format("publish successfully for Connection {0}.", connection));
+				result.setResponseCodeOK();	
+			} else {
+				result.setSuccessful(false);
+				result.setResponseMessage(MessageFormat.format("Publish failed for connection {0}.", connection));
+				result.setResponseData(MessageFormat.format("Client [{0}] publish failed: {1}", (clientId == null ? "null" : clientId.toString()), pubCallback.getErrorMessage()).getBytes());
+				result.setResponseCode("501");
+				logger.info(MessageFormat.format("** [clientId: {0}, topic: {1}, payload: {2}] Publish failed for connection {3}.", (clientId == null ? "null" : clientId.toString()), 
+						topicName, new String(toSend), connection));
+				logger.info(pubCallback.getErrorMessage());
+			}
+		} catch (Exception ex) {
+			logger.severe(ex.getMessage());
+			if (result.getEndTime() == 0) result.sampleEnd();
+			result.setLatency(result.getEndTime() - result.getStartTime());
+			result.setSuccessful(false);
+			result.setResponseMessage(MessageFormat.format("Publish failed for connection {0}.", connection));
+			result.setResponseData(MessageFormat.format("Client [{0}] publish failed: {1}", (clientId == null ? "null" : clientId.toString()), ex.getMessage()).getBytes());
+			result.setResponseCode("502");
+			logger.info(MessageFormat.format("** [clientId: {0}, topic: {1}, payload: {2}] Publish failed for connection {3}.", (clientId == null ? "null" : clientId.toString()), 
+					topicName, new String(toSend), connection));
+		}
+		return result;
+	}
+
+	private void setListener(final JMeterVariables vars) {
+		connection.listener(new Listener() {
+			@Override
+			public void onPublish(UTF8Buffer topic, Buffer body, Runnable ack) {
+			}
+
+			@Override
+			public void onFailure(Throwable value) {
+				logger.severe("[FizzTest] Sub on Failure");
+			}
+
+			@Override
+			public void onDisconnected() {
+				connection = (CallbackConnection) vars.getObject("conn");
+				if (Objects.nonNull(connection)) {
+					connection.disconnect(null);
+				}
+
+				vars.remove("conn");
+				vars.remove("has_subscribed");
+
+				UTF8Buffer clientId = (UTF8Buffer) vars.getObject("clientId");
+
+
+				if (Objects.nonNull(clientId)) {
+					topicSubscribed.remove(clientId);
+				}
+			}
+
+			@Override
+			public void onConnected() {
+				logger.severe("[FizzTest] Sub on Connected");
+			}
+		});
+	}
+	
+}

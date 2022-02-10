@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build hbase health check
+Parameters:
+  HBaseMasterPublicIP:
+    Description: Please enter hbase master node public ip
+    Type: String
+    MinLength: '7'
+    MaxLength: '15'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    ConstraintDescription: must be a valid a Public ip of ec2
+  TSDBPort:
+    Description: Please enter TSDB port
+    Type: Number
+    Default: 4242
+  SNSTopicName:
+    Description: Please enter sns topic name of fizz stack alerts
+    Type: String
+Resources:
+  TSDBHealthCheck: 
+    Type: AWS::Route53::HealthCheck
+    Properties: 
+      HealthCheckConfig: 
+        IPAddress: !Ref HBaseMasterPublicIP
+        Port: !Ref TSDBPort
+        Type: HTTP
+        ResourcePath: /api/version
+        RequestInterval: 30
+        FailureThreshold: 1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-opentsdb'
+  TSDBHealthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Description: TSDB health check alarm
+    Properties: 
+      ActionsEnabled: true
+      AlarmActions: 
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopicName}
+      AlarmDescription: Open TSDB Health Check
+      AlarmName: !Sub '${AWS::StackName}-fizz-opentsdb-health-alert'
+      ComparisonOperator: LessThanThreshold
+      DatapointsToAlarm: 1
+      Dimensions: 
+        - Name: HealthCheckId
+          Value: !Ref TSDBHealthCheck
+      EvaluationPeriods: 1
+      MetricName: !Sub '${AWS::StackName}-fizz-health-check-status'
+      Namespace: AWS/Route53
+      OKActions: 
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopicName}
+      Period: 60
+      Statistic: Minimum
+      Threshold: 1

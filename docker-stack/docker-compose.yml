@@ -1,0 +1,58 @@
+version: '2'
+services:
+  zookeeper-kafka:
+    image: wurstmeister/zookeeper:3.4.6
+    container_name: zookeeper
+    expose:
+     - 2181
+  kafka:
+    image: adminfizz/kafka:latest
+    container_name: kafka
+    ports:
+     - 9092:9092
+    expose:
+     - 9093
+    depends_on:
+      - zookeeper-kafka
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9093,OUTSIDE://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:9093,OUTSIDE://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-kafka:2181
+  hbase:
+    image: adminfizz/hbase-kafka-proxy
+    container_name: hbase
+    hostname: hbase.fizz.internal
+    ports: 
+      - 2181:2181 
+      - 8080:8080
+      - 8085:8085
+      - 9090:9090
+      - 9095:9095
+      - 16010:16010
+      - 16020:16020
+      - 16030:16030
+    environment:
+      KAFKA_HOST: kafka
+      KAFKA_PORT: 9093
+      BOOT_TIME: 45s
+    depends_on:
+      - kafka
+  redis:
+    image: redis:5.0
+    container_name: redis
+    ports: 
+      - 6379:6379
+  emqx:
+    image: emqx/emqx:4.3.8
+    container_name: emqx
+    ports:
+      - 1883:1883
+      - 8083:8083
+      - 18083:18083
+      - 8081:8081
+    volumes:
+      - ./plugins/emqx_exhook.conf:/opt/emqx/etc/plugins/emqx_exhook.conf
+    environment:
+      EMQX_LOADED_PLUGINS: emqx_management,emqx_recon,emqx_retainer,emqx_exhook

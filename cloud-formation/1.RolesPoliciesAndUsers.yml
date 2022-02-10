@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  EmrInstanceProfileRole:
+    Type: 'AWS::IAM::Role'
+    Description: Analytics emr job instance profile access role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-fizz-emr-instance-profile-role'
+      Description: Allow Analytics job to access required resources
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticmapreduce.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+  EmrJobRole:
+    Type: 'AWS::IAM::Role'
+    Description: Analytics emr job access role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-fizz-emr-job-role'
+      Description: Allow analytics job to access required resources
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role'
+        - 'arn:aws:iam::aws:policy/AmazonKinesisFullAccess'
+        - 'arn:aws:iam::aws:policy/ComprehendFullAccess'

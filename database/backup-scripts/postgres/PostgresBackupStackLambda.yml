@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  DBName:
+    Type: String
+  S3Name:
+    Type: String
+  DBEndpoint:
+    Type: String
+  DBUsername:
+    Type: String
+  DBPassword:
+    Type: String
+  BackupScriptTemplateUrl:
+    Type: String
+    Default: https://fizz-cloudformation-scripts.s3-us-west-1.amazonaws.com/automation-helper/Backupscripts/PostgresBackupScript.yml
+Resources:  
+  PgDumpRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role for Postgress backup using pg_dump
+    Properties:
+      RoleName: PgDumpRole
+      Description: Custom role for Postgress backup using pg_dump
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonVPCFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonEC2FullAccess'
+      Policies:
+        - PolicyName: pg-dump-lambda-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'logs:CreateLogGroup'
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+  PgDumpLambdaCreateFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      FunctionName: PgDumpLambdaCreateFunction
+      Role: !GetAtt 
+        - PgDumpRole
+        - Arn
+      Code:
+        ZipFile: !Join 
+          - |+
+          
+          - - import json
+            - import boto3
+            - import os
+            - from datetime import datetime
+            - from urllib.parse import urlparse
+            - 'template_url = os.environ["templateUrl"]'
+            - 'stackname = os.environ["CfStackName"]'
+            - 'def parse_params():'
+            - '    DBName=os.environ["DBName"]'
+            - '    DBPath=os.environ["DBPath"]'
+            - '    Username=os.environ["Username"]'
+            - '    Password=os.environ["Password"]'
+            - '    S3Path=os.environ["S3Path"]'
+            - '    data =  [{"ParameterKey": "DBName", "ParameterValue": DBName}, {"ParameterKey": "DBPath","ParameterValue": DBPath}, {"ParameterKey": "S3Path","ParameterValue": S3Path}, {"ParameterKey": "Username","ParameterValue": Username},{"ParameterKey": "Password","ParameterValue": Password}]'
+            - '    json_data = json.dumps(data)'
+            - '    template_params = json.loads(json_data)'
+            - '    return template_params'            
+            - 'def launch_stack():'
+            - '  cfn = boto3.client(''cloudformation'')'
+            - '  current_ts = datetime.now().isoformat().split(''.'')[0].replace('':'',''-'')'
+            - '  capabilities = [''CAPABILITY_NAMED_IAM'']'
+            - '  try:'
+            - '    template_params = parse_params()'
+            - '    stackdata = cfn.create_stack('
+            - '      StackName=stackname,'
+            - '      DisableRollback=True,'
+            - '      TemplateURL=template_url,'
+            - '      Parameters=template_params,'
+            - '      Capabilities=capabilities)'
+            - '  except Exception as e:'
+            - '    print(str(e))'
+            - '  return stackdata '
+            - 'def handler(event, context):'
+            - '  print("Received event:")'
+            - '  stack_result=launch_stack()'
+            - '  print(stack_result)'
+      Timeout: '60'
+      Environment: 
+          Variables: 
+            CfStackName : Postgres-Dump-to-S3
+            templateUrl : !Ref BackupScriptTemplateUrl
+            DBName: !Ref DBName
+            S3Path: !Ref S3Name
+            DBPath: !Ref DBEndpoint
+            Username: !Ref DBUsername
+            Password: !Ref DBPassword
+      MemorySize: '256'
+      Runtime: python3.6
+  PgDumpLambdaDeleteFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      FunctionName: PgDumpLambdaDeleteFunction
+      Role: !GetAtt 
+        - PgDumpRole
+        - Arn
+      Code:
+        ZipFile: !Join 
+          - |+
+          
+          - - from __future__ import print_function
+            - import json
+            - import boto3
+            - import os
+            - 'stackname = os.environ["CfStackName"]'
+            - 'def handler(event, context):'
+            - '   client = boto3.client(''cloudformation'')'
+            - '   return client.delete_stack('
+            - '                StackName=stackname'
+            - '            )'
+      Timeout: '60'
+      Environment: 
+          Variables: 
+            CfStackName : Postgres-Dump-to-S3
+      MemorySize: '256'
+      Runtime: python3.6
+  PgDumpLambdaCreateSchedule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "Scheduled Rule for pgdump to s3"
+      ScheduleExpression: "cron(0 7 * * ? *)"
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${PgDumpLambdaCreateFunction.Arn}
+          Id: PgDump-Lambda-Create-Schedule
+  PgDumpLambdaCreateSchedulePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Sub ${PgDumpLambdaCreateFunction.Arn}
+      Principal: 'events.amazonaws.com'
+      SourceArn: !Sub ${PgDumpLambdaCreateSchedule.Arn}
+  PostgressSnSTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        Subscription:
+          - Endpoint:          
+             Fn::GetAtt:
+              - "PgDumpLambdaDeleteFunction"
+              - "Arn"
+            Protocol: "lambda"
+        TopicName: "PostgressSnSTopic"
+  PgDumpLambdaDeleteSchedulePermission:
+      Type: "AWS::Lambda::Permission"
+      Properties:
+        Action: 'lambda:InvokeFunction'
+        FunctionName: !Sub ${PgDumpLambdaDeleteFunction.Arn}
+        Principal: 'sns.amazonaws.com'
+        SourceArn: !Ref PostgressSnSTopic
+  SNSAddTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+        PolicyDocument:
+          Id: 'accounts-sns-add-policy-dev'
+          Version: '2012-10-17'
+          Statement:
+            Sid: '__console_pub_0'
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource: !Ref PostgressSnSTopic
+        Topics:
+          - !Ref PostgressSnSTopic

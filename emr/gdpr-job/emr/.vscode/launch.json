@@ -1,0 +1,42 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Program",
+            "program": "${workspaceFolder}/drivers/gdprJob.js",
+            "env": {
+                "GDPR_JOB_JAR_LOCATION": "com.fizz.prod.gdpr/gdpr-job-1.0-SNAPSHOT.jar",
+
+                "GDPR_ANONYMIZE_ID": "fizz_anonymized",
+                "GDPR_ANONYMIZE_NICK": "fizz_anonymized",
+
+                "GDPR_FIZZ_GATEWAY_URL": "http://api.fizz.io:9310",
+
+                "GDPR_ES_HOST": "",
+                "GDPR_ES_PORT": "443",
+                "GDPR_ES_PROTOCOL": "https",
+                "GDPR_ES_REQUEST_INDEX": "gdpr_requests",
+                "GDPR_ES_REQUEST_RESOURCE": "docs",
+                "GDPR_ES_REQUEST_SIZE": "100",
+                "GDPR_ES_TEXT_MESSAGE_INDEX": "text_messages",
+                "GDPR_ES_REPORTED_MESSAGES_INDEX": "report_messages",
+
+                "GDPR_HBASE_ZOOKEEPER_QOURUM": "hbase.fizz.internal",
+                "GDPR_HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT": "2181",
+                "GDPR_HBASE_DISTRIBUTED_CLUSTERED": "true",
+                "GDPR_HBASE_ZOOKEEPER_ZNODE_PARENT": "/hbase-unsecure",
+
+                "GDPR_CHAT_HBASE_NAMESPACE": "chat_prod",
+                "GDPR_CHAT_HBASE_MESSAGE_TABLE": "tbl_message",
+                "GDPR_CHAT_HBASE_MESSAGE_CF": "c",
+
+                "GDPR_LOG_URI": ""
+            }
+        }
+    ]
+}

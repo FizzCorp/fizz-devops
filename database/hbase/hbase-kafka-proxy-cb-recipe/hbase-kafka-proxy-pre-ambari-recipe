@@ -1,0 +1,57 @@
+#!/bin/bash
+
+cd /var/lib/ambari-server/resources/stacks/HDP/3.1/services
+mkdir KafkaProxy
+cd KafkaProxy
+
+echo "<?xml version=\"1.0\"?>
+<metainfo>
+   <schemaVersion>2.0</schemaVersion>
+   <services>
+       <service>
+           <name>KAFKAPROXY</name>
+           <displayName>Kafka Proxy</displayName>
+           <comment>Custom kafka proxy service</comment>
+           <version>1.0.0</version>
+           <components>
+               <component>
+                   <name>KAFKAPROXY_SLAVE</name>
+                   <displayName>KafkaProxy</displayName>
+                   <category>SLAVE</category>
+                   <cardinality>1+</cardinality>
+                   <commandScript> Srv Slave Srv Slave
+                       <script>scripts/slave.py</script>
+                       <scriptType>PYTHON</scriptType>
+                       <timeout>600</timeout>
+                   </commandScript>
+               </component>
+           </components>
+           <osSpecifics>
+               <osSpecific>
+                   <osFamily>any</osFamily>
+               </osSpecific>
+           </osSpecifics>
+       </service>
+   </services>
+</metainfo>" > metainfo.xml
+
+mkdir -p package/scripts
+cd package/scripts
+echo "import sys, os
+from resource_management import *
+class Slave(Script):
+ def install(self, env):
+   print 'Install the KafkaProxy'; 
+   os.system(\"sudo wget -c https://fizz-ambari-hdp-rpms.s3.amazonaws.com/hbase-connectors-1.0.1.tar.gz -O - | sudo tar -xz -C /opt/ \");
+ def configure(self, env):
+   print 'Configure the KafkaProxy';
+ def stop(self, env):
+   print 'Stop the KafkaProxy';
+   os.system(\"/opt/hbase-connectors-1.0.1/bin/hbase-connectors-daemon.sh stop kafkaproxy\");
+ def start(self, env):
+   print 'Start the KafkaProxy';
+   os.system(\"/opt/hbase-connectors-1.0.1/bin/hbase-connectors-daemon.sh start kafkaproxy -a -e -p kafkaProxy -b <<kafkaEndpoints>>\");
+ def status(self, env):
+   print 'Status of the KafkaProxy';
+if __name__ == \"__main__\":
+ Slave().execute() " > slave.py

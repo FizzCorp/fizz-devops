@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EsRestoreEndpoint:
+    Type: String
+  Region:
+    Type: String
+  EsRestoreSnapshotScriptTemplateURL:
+    Type: String
+    Default: https://fizz-cloudformation-scripts.s3-us-west-1.amazonaws.com/automation-helper/Backupscripts/ESSnapshotImportscript.yml
+  S3Name:
+    Type: String
+  ESSecurityGroupName:
+    Description: Name of the security group attached with Elastic Search
+    Type: 'AWS::EC2::SecurityGroup::Id'
+    ConstraintDescription: must be the name of an existing ES Security Group.
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+Resources: 
+  EsRestoreRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role to restore es 
+    Properties:
+      RoleName: EsRestoreRole
+      Description: Custom role to restore es
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonVPCFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonEC2FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonESFullAccess'
+      Policies:
+        - PolicyName: es-restore-lambda-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'logs:CreateLogGroup'
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+  EsRestoreLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      FunctionName: EsRestoreLambdaFunction
+      Role: !GetAtt 
+        - EsRestoreRole
+        - Arn
+      Code:
+        ZipFile: !Join 
+          - |+
+          
+          - - import json
+            - import boto3
+            - import os
+            - from datetime import datetime
+            - from urllib.parse import urlparse
+            - 'template_url = os.environ["templateUrl"]'
+            - 'stackname = os.environ["CfStackName"]'
+            - 'def parse_params():'
+            - '    EsRestoreEndpoint=os.environ["EsRestoreEndpoint"]'
+            - '    Region=os.environ["Region"]'
+            - '    S3Name=os.environ["S3Name"]'
+            - '    KeyName=os.environ["KeyName"]'
+            - '    ESSecurityGroupName=os.environ["ESSecurityGroupName"]'
+            - '    data =  [{"ParameterKey": "EsRestoreEndpoint", "ParameterValue": EsRestoreEndpoint}, {"ParameterKey": "Region","ParameterValue": Region}, {"ParameterKey": "ESSecurityGroupName","ParameterValue": ESSecurityGroupName}, {"ParameterKey": "KeyName","ParameterValue": KeyName}, {"ParameterKey": "S3Name","ParameterValue": S3Name}]'
+            - '    json_data = json.dumps(data)'
+            - '    template_params = json.loads(json_data)'
+            - '    return template_params'            
+            - 'def launch_stack():'
+            - '  cfn = boto3.client(''cloudformation'')'
+            - '  current_ts = datetime.now().isoformat().split(''.'')[0].replace('':'',''-'')'
+            - '  capabilities = [''CAPABILITY_NAMED_IAM'']'
+            - '  try:'
+            - '    template_params = parse_params()'
+            - '    stackdata = cfn.create_stack('
+            - '      StackName=stackname,'
+            - '      DisableRollback=True,'
+            - '      TemplateURL=template_url,'
+            - '      Parameters=template_params,'
+            - '      Capabilities=capabilities)'
+            - '  except Exception as e:'
+            - '    print(str(e))'
+            - '  return stackdata '
+            - 'def handler(event, context):'
+            - '  print("Received event:")'
+            - '  stack_result=launch_stack()'
+            - '  print(stack_result)'
+      Timeout: '60'
+      Environment: 
+          Variables: 
+            CfStackName : ES-Restore-S3
+            templateUrl : !Ref EsRestoreSnapshotScriptTemplateURL
+            S3Name: !Ref S3Name
+            EsRestoreEndpoint: !Ref EsRestoreEndpoint  
+            Region: !Ref Region
+            ESSecurityGroupName: !Ref ESSecurityGroupName  
+            KeyName: !Ref KeyName
+      MemorySize: '256'
+      Runtime: python3.6
+  EsRestoreDeleteLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      FunctionName: EsRestoreDeleteLambdaFunction
+      Role: !GetAtt 
+        - EsRestoreRole
+        - Arn
+      Code:
+        ZipFile: !Join 
+          - |+
+          
+          - - from __future__ import print_function
+            - import json
+            - import boto3
+            - import os
+            - import time
+            - 'stackname = os.environ["CfStackName"]'
+            - 'def handler(event, context):'
+            - '   time.sleep(120)'
+            - '   client = boto3.client(''cloudformation'')'
+            - '   return client.delete_stack('
+            - '                StackName=stackname'
+            - '            )'
+      Timeout: '160'
+      Environment: 
+          Variables: 
+            CfStackName : ES-Restore-S3
+      MemorySize: '256'
+      Runtime: python3.6
+  EsRestoreSnSTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        Subscription:
+          - Endpoint:          
+             Fn::GetAtt:
+              - "EsRestoreDeleteLambdaFunction"
+              - "Arn"
+            Protocol: "lambda"
+        TopicName: "EsRestoreSnSTopic"
+  PgImportLambdaDeleteSchedulePermission:
+      Type: "AWS::Lambda::Permission"
+      Properties:
+        Action: 'lambda:InvokeFunction'
+        FunctionName: !Sub ${EsRestoreDeleteLambdaFunction.Arn}
+        Principal: 'sns.amazonaws.com'
+        SourceArn: !Ref EsRestoreSnSTopic
+  SNSAddTopicPolicy2:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+        PolicyDocument:
+          Id: 'accounts-sns-add-policy-dev'
+          Version: '2012-10-17'
+          Statement:
+            Sid: '__console_pub_0'
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource: !Ref EsRestoreSnSTopic
+        Topics:
+          - !Ref EsRestoreSnSTopic

@@ -1,0 +1,9 @@
+node_modules/
+dump.rdb
+.idea
+.DS_Store
+temp
+*.iml
+*.pem
+*.zip
+*.log

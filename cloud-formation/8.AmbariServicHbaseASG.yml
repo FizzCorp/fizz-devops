@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy ambari service, hbase master and slave machines
+Parameters:
+  AmbariHdpRepoDNSRecord:
+    Description: Please enter the ambari hdp repo dns record
+    Type: String
+  AmbariEC2InstanceType:
+    Description: Please select the compute and memory capacity of the ambari node
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: must select a valid Node type.
+  KeyName:
+    Description: Please select an existing ec2 keypair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+  NumberOfHbaseSlaveNodes:
+    Description: Please enter number of hbase slave nodes
+    Type: String
+    Default: 1
+  AmbariHdpRepoSG:
+    Description: Please select fizz ambari hdp repo security group
+    Type: AWS::EC2::SecurityGroup::Id
+  ComponentsSG:
+    Description: Please select fizz components security group
+    Type: AWS::EC2::SecurityGroup::Id
+  InternalRoute53SG:
+    Description: Please select fizz internal route53 security group
+    Type: AWS::EC2::SecurityGroup::Id
+  ScalingGroupSubnet:
+    Description: Please select the subnet id hbase slave will be hosted in
+    Type: AWS::EC2::Subnet::Id
+  KafkaBrokerEndpoints:
+    Description: Please enter kafka broker endpoints
+    Type: String
+Mappings:
+  AWSRegionAMI:
+    us-east-1: 
+      AMI: ami-02eac2c0129f6376b
+    us-west-1:
+      AMI: ami-074e2d6769f445be5
+Resources:
+  AmbariServiceEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref AmbariEC2InstanceType
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-ambari-service'
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+      SecurityGroupIds: 
+        - !Ref AmbariHdpRepoSG
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap 
+        - AWSRegionAMI
+        - !Ref AWS::Region
+        - AMI
+      UserData:
+        Fn::Base64: 
+          Fn::Sub: |
+              #!/bin/bash -e
+              yum update -y
+              yum install wget unzip -y
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              ./aws/install
+              #Install Ambari
+              wget -O /etc/yum.repos.d/ambari.repo http://${AmbariHdpRepoDNSRecord}/repo/ambari/ambari.repo
+              yum install ambari-server ambari-agent -y
+              yes '' | ambari-server setup -s
+              ambari-server start
+              ambari-agent start
+              #Management Pack Installaion - HDP 3.1.4.0
+              cd /home/centos/
+              curl "https://fizz-ambari-hdp-rpms.s3.amazonaws.com/hdp-ambari-mpack-3.1.4.0.tar.gz" -o hdp-ambari-mpack-3.1.4.0.tar.gz
+              tar -xvzf hdp-ambari-mpack-3.1.4.0.tar.gz
+              sed -i "/broker-1-endpoint,broker-2-endpoint/c\   os.system(\"/opt/hbase-connectors-1.0.1/bin/hbase-connectors-daemon.sh start kafkaproxy -a -e -p kafkaProxy -b ${KafkaBrokerEndpoints}\");" /home/centos/hdp-ambari-mpack-3.1.4.0/stacks/HDP/3.1/services/KafkaProxy/package/scripts/slave.py
+              sed -i 's/ambarihdp.fizz.internal/${AmbariHdpRepoDNSRecord}/g' /home/centos/hdp-ambari-mpack-3.1.4.0/stacks/HDP/3.1/repos/repoinfo.xml
+              tar -czvf updated-hdp-ambari-mpack-3.1.4.0.tar.gz hdp-ambari-mpack-3.1.4.0
+              ambari-server install-mpack --mpack=updated-hdp-ambari-mpack-3.1.4.0.tar.gz --verbose
+              ambari-server restart
+  HaseMasterEc2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !FindInMap 
+          - AWSRegionAMI
+          - !Ref 'AWS::Region'
+          - AMI
+      InstanceInitiatedShutdownBehavior: "terminate"
+      InstanceType: "m5.2xlarge"
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-hbase-master-node'
+      SecurityGroupIds:
+        - !Ref AmbariHdpRepoSG
+        - !Ref ComponentsSG
+        - !Ref InternalRoute53SG
+      KeyName: !Ref KeyName
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            VolumeSize: 250
+      UserData:
+        Fn::Base64: |
+            #!/bin/bash -xe
+            grep -o 'ssh.*'  /root/.ssh/authorized_keys > /root/.ssh/a.txt
+            grep -o 'ssh.*'  /root/.ssh/a.txt > /root/.ssh/authorized_keys
+            rm -rf /root/.ssh/a.txt
+            yum install -y java-1.8.0-openjdk 
+            echo 'export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")' >> ~/.bashrc
+            echo "export PATH=$PATH:$JAVA_HOME/bin" >> ~/.bashrc
+            echo "export CLASSPATH=.:$JAVA_HOME/jre/lib:$JAVA_HOME/lib:$JAVA_HOME/lib/tools.jar" >> ~/.bashrc
+            source ~/.bashrc
+            yum install -y java-1.8.0-openjdk-devel.x86_64 
+            yum install wget git -y
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub '${AWS::StackName}-fizz-hbase-slave-launch-config'
+      LaunchTemplateData:
+        ImageId: !FindInMap 
+            - AWSRegionAMI
+            - !Ref 'AWS::Region'
+            - AMI
+        InstanceType: m5.xlarge
+        InstanceInitiatedShutdownBehavior: "terminate"
+        SecurityGroupIds:
+          - !Ref AmbariHdpRepoSG
+          - !Ref ComponentsSG
+          - !Ref InternalRoute53SG
+        KeyName: !Ref KeyName
+        TagSpecifications:
+          - ResourceType: instance
+            Tags: 
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-fizz-hbase-slave-node'
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              VolumeSize: 250
+        UserData:
+          Fn::Base64: |
+              #!/bin/bash -xe
+              grep -o 'ssh.*'  /root/.ssh/authorized_keys > /root/.ssh/a.txt
+              grep -o 'ssh.*'  /root/.ssh/a.txt > /root/.ssh/authorized_keys
+              rm -rf /root/.ssh/a.txt
+              yum install -y java-1.8.0-openjdk 
+              echo 'export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")' >> ~/.bashrc
+              echo "export PATH=$PATH:$JAVA_HOME/bin" >> ~/.bashrc
+              echo "export CLASSPATH=.:$JAVA_HOME/jre/lib:$JAVA_HOME/lib:$JAVA_HOME/lib/tools.jar" >> ~/.bashrc
+              source ~/.bashrc
+              yum install -y java-1.8.0-openjdk-devel.x86_64 
+              yum install wget git -y
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${AWS::StackName}-fizz-hbase-slave'
+      MinSize: '1'
+      MaxSize: '10'
+      DesiredCapacity: !Ref NumberOfHbaseSlaveNodes
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version:  !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:   
+        - !Ref ScalingGroupSubnet
+Outputs:
+  InstanceId:
+    Description: InstanceId of the ambari service instance
+    Value: !Ref AmbariServiceEC2
+  PublicIp:
+    Description: Public IP address of ambari service instance
+    Value: !GetAtt 
+      - AmbariServiceEC2
+      - PublicIp

@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudwatch alerts of fizz api gateway
+Parameters:
+  GatewayEnviromentName:
+    Description: Please enter name of the fizz api gateway beanstalk environment
+    Type: String
+    ConstraintDescription: allowed values are a-z only
+  StackSNSTopicName:
+    Description: Please enter sns topic name of fizz stack alerts
+    Type: String
+  BillingSNSTopicName:
+    Description: Please enter sns topic name of fizz billing alerts
+    Type: String
+  BillingThreshold:
+    Description: Please enter billing threashold for aws account
+    Type: Number
+    Default: 800
+Resources:
+  CloudwatchAlarmHealth:
+    Type: AWS::CloudWatch::Alarm
+    Description: System Health Cloudwatch Alarm for API Gateway
+    Properties: 
+      ActionsEnabled: true
+      AlarmActions: 
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${StackSNSTopicName}
+      AlarmDescription: !Sub ${GatewayEnviromentName} system health alert
+      AlarmName: !Sub ${GatewayEnviromentName}-health-alert
+      ComparisonOperator: GreaterThanThreshold
+      DatapointsToAlarm: 1
+      Dimensions: 
+        - Name: EnvironmentName
+          Value: !Sub ${GatewayEnviromentName}
+      EvaluationPeriods: 1
+      MetricName: EnvironmentHealth
+      Namespace: AWS/ElasticBeanstalk
+      OKActions: 
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${StackSNSTopicName}
+      Period: 300
+      Statistic: Average
+      Threshold: 0
+  CloudwatchAlarmBilling:
+    Type: AWS::CloudWatch::Alarm
+    Description: AWS Account Billing alarms
+    Properties: 
+      ActionsEnabled: true
+      AlarmActions: 
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${BillingSNSTopicName}
+      AlarmDescription: AWS Billing Alarm
+      AlarmName: fizz-billing-alarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      DatapointsToAlarm: 1
+      Dimensions: 
+        - Name: Currency
+          Value: USD
+      EvaluationPeriods: 1
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Period: 8640
+      Statistic: Maximum
+      Threshold: !Ref BillingThreshold
+Outputs:
+  CloudwatchAlarmHealthArn:
+    Description: API Gateway Health Alert Arn
+    Value: !GetAtt 
+      - CloudwatchAlarmHealth
+      - Arn
+  CloudwatchAlarmBillingArn:
+    Description: Billing Alert Arn
+    Value: !GetAtt 
+      - CloudwatchAlarmBilling
+      - Arn

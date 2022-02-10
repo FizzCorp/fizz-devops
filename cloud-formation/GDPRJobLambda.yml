@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy fizz gdpr job lambda
+Parameters:
+  fizzGdprJobScheduleExpression:
+    Description: Please enter fizz gdpr job trigger cron expression
+    Type: String
+    Default: 00 09 * * ? *
+  GDPRJobJarLocation:
+    Description: Please enter gdpr job jar location
+    Type: String
+    Default: com.fizz.prod.gdpr/gdpr-job-1.0-SNAPSHOT.jar
+  GdprAnonymizeId:
+    Description: Please enter gdpr anonymize id
+    Type: String
+    Default: fizz_anonymized
+  GdprAnonymizeNick:
+    Description: Please enter gdpr anonymize nick
+    Type: String
+    Default: fizz_anonymized
+  GdprFizzgatewayUrl:
+    Description: Please enter fizz api gateway url
+    Type: String
+  GdprEsHost:
+    Description: Please enter gdpr elasticsearch host
+    Type: String
+  GdprEsPort:
+    Description: Please enter gdpr elasticsearch port
+    Type: String
+    Default: 443
+  GdprEsProtocol:
+    Description: Please enter gdpr elasticsearch protocol
+    Type: String
+    Default: https
+  GdprEsRequestIndex:
+    Description: Please enter gdpr elasticsearch request index
+    Type: String
+    Default: gdpr_requests
+  GdprEsRequestResource:
+    Description: Please enter gdpr elasticsearch request resource
+    Type: String
+    Default: docs
+  GdprEsRequestSize:
+    Description: Please enter gdpr request hanlde size
+    Type: String
+    Default: 100
+  GdprEsTextMessageIndex:
+    Description: Please enter gdpr elasticsearch text message index
+    Type: String
+    Default: text_messages
+  GdprEsReportedMessageIndex:
+    Description: Please enter gdpr elasticsearch reported message index
+    Type: String
+    Default: report_messages
+  GdprHbaseZookeeperQourum:
+    Description: Please enter gdpr hbase zookeeper qourum (e.g hbase.fizz-internal)
+    Type: String
+  GdprHbaseZookeeperPropertyClientport:
+    Description: Please enter gdpr hbase zookeeper property clientport
+    Type: String
+    Default: 2181
+  GdprHbaseDistributedClustered:
+    Description: Please enter gdpr hbase distributed clustered
+    Type: String
+    Default: true
+  GdprHbaseZokeeperZnodeParent:
+    Description: Please enter gdpr hbase zokeeper znode parent
+    Type: String
+    Default: /hbase-unsecure
+  GdprChatHbaseNamespace:
+    Description: Please enter gdpr chat hbase namespace
+    Type: String
+    Default: chat_prod
+  GdprChatHbaseMessageTable:
+    Description: Please enter gdpr chat hbase message table
+    Type: String
+    Default: tbl_message
+  GdprChatHbaseMessageCF:
+    Description: Please enter gdpr chat hbase message cf
+    Type: String
+    Default: c
+  S3BucketName:
+    Description: Please enter s3 bucket name used by lambda job
+    Type: String
+    Default: com.fizz.prod.gdpr
+  LogURI:
+    Description: Please enter S3 url for emr logs
+    Type: String
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Description: Custom role for fizz-gdpr-job 
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-fizz-gdpr-job-role
+      Description: Fizz gdpr job role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonElasticMapReduceFullAccess'
+        - 'arn:aws:iam::aws:policy/CloudWatchLogsFullAccess'
+      Policies:
+        - PolicyName: s3-bucket-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: Stmt1495119614000
+                Effect: Allow
+                Action: 
+                  - 's3:DeleteObject'
+                  - 's3:GetBucketAcl'
+                  - 's3:GetObject'
+                  - 's3:GetObjectAcl'
+                  - 's3:ListBucket'
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+  FizzGdprJobLambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Description: Fizz gdpr job
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-fizz-gdpr-job
+      Role: !GetAtt 
+        - LambdaRole
+        - Arn
+      Code: 
+        ZipFile: !Join 
+          - |+
+
+          - - 'exports.handler = async (event) => {'
+            - '    // TODO implement'
+            - 'const response = {'
+            - '    statusCode: 200,'
+            - '    body: JSON.stringify(''Hello from Lambda!''),'
+            - '    };'
+            - '    return response;'
+            - '};'
+      Environment:
+        Variables:
+          GDPR_ANONYMIZE_ID : !Ref GdprAnonymizeId
+          GDPR_JOB_JAR_LOCATION : !Sub ${GDPRJobJarLocation}
+          GDPR_ANONYMIZE_NICK : !Ref GdprAnonymizeNick
+          GDPR_FIZZ_GATEWAY_URL : !Ref GdprFizzgatewayUrl
+          GDPR_ES_HOST : !Ref GdprEsHost
+          GDPR_ES_PORT : !Ref GdprEsPort
+          GDPR_ES_PROTOCOL : !Ref GdprEsProtocol
+          GDPR_ES_REQUEST_INDEX : !Ref GdprEsRequestIndex
+          GDPR_ES_REQUEST_RESOURCE : !Ref GdprEsRequestResource
+          GDPR_ES_REQUEST_SIZE : !Ref GdprEsRequestSize
+          GDPR_ES_TEXT_MESSAGE_INDEX : !Ref GdprEsTextMessageIndex
+          GDPR_ES_REPORTED_MESSAGES_INDEX : !Ref GdprEsReportedMessageIndex
+          GDPR_HBASE_ZOOKEEPER_QOURUM : !Ref GdprHbaseZookeeperQourum
+          GDPR_HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT : !Ref GdprHbaseZookeeperPropertyClientport
+          GDPR_HBASE_DISTRIBUTED_CLUSTERED : !Ref GdprHbaseDistributedClustered
+          GDPR_HBASE_ZOOKEEPER_ZNODE_PARENT : !Ref GdprHbaseZokeeperZnodeParent
+          GDPR_CHAT_HBASE_NAMESPACE : !Ref GdprChatHbaseNamespace
+          GDPR_CHAT_HBASE_MESSAGE_TABLE : !Ref GdprChatHbaseMessageTable
+          GDPR_CHAT_HBASE_MESSAGE_CF : !Ref GdprChatHbaseMessageCF
+          GDPR_LOG_URI : !Ref LogURI
+      Timeout: 300
+      Runtime: nodejs12.x
+  TriggerFizzGdprJob:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Fizz gdpr job trigger
+      Name: !Sub ${AWS::StackName}-fizz-gdpr-job-trigger
+      ScheduleExpression: !Sub cron(${fizzGdprJobScheduleExpression})
+      Targets: 
+        - Arn: !GetAtt 
+          - FizzGdprJobLambda
+          - Arn
+          Id: FizzGdprJobLambda
+  PermissionToInvokefizzGdprJobLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref FizzGdprJobLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt: 
+          - TriggerFizzGdprJob
+          - Arn
+ 

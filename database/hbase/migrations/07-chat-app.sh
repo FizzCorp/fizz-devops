@@ -1,0 +1,13 @@
+NAMESPACE=$1
+HBASE_CLI="hbase"
+
+# chat app
+NS_CHAT_APP="chat_app_$NAMESPACE"
+TABLE_CHAT_APP="tbl_app"
+CF_PROVIDER_CONFIG_CONTENT="c"
+
+exec "$HBASE_CLI" shell <<EOF
+create_namespace '$NS_CHAT_APP'
+
+create '$NS_CHAT_APP:$TABLE_CHAT_APP', {NAME => '$CF_PROVIDER_CONFIG_CONTENT', VERSIONS => 1  }
+EOF

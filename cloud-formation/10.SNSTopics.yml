@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Fizz alerts sns topic
+Parameters:
+  EmailAddresss:
+    Description: Please enter email address for sns alerts
+    Type: String
+Resources:
+  StackSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: !Sub '${AWS::StackName}-fizz-alerts'
+      Subscription: 
+        - Endpoint: !Ref EmailAddresss
+          Protocol: email
+      TopicName: !Sub '${AWS::StackName}-fizz-alerts'
+  BillingSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: !Sub '${AWS::StackName}-fizz-billing-alerts'
+      Subscription: 
+        - Endpoint: !Ref EmailAddresss
+          Protocol: email
+      TopicName: !Sub '${AWS::StackName}-fizz-billing-alerts'
+Outputs:
+  StackSNSTopicArn:
+    Description: ARN of fizz stack alerts sns topic
+    Value: !Ref StackSNSTopic
+  BillingSNSTopicArn:
+    Description: ARN of fizz billing alerts sns topic
+    Value: !Ref BillingSNSTopic

@@ -1,0 +1,13 @@
+NAMESPACE=$1
+HBASE_CLI="hbase"
+
+# chat
+NS_CHAT="chat_$NAMESPACE"
+
+TABLE_MESSAGE="tbl_message"
+CF_MESSAGE_EVENTS="e"
+
+exec "$HBASE_CLI" shell <<EOF
+
+alter '$NS_CHAT:$TABLE_MESSAGE', NAME => '$CF_MESSAGE_EVENTS', VERSIONS => 1 , REPLICATION_SCOPE => 1
+EOF

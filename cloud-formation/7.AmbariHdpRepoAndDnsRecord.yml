@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  KeyName:
+    Description: Please select an existing ec2 keypair to enable ssh access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+  HostedZoneName:
+    Description: Please enter the route53 fizz hosted zone domain name (e.g fizz-internal)
+    Type: String
+Mappings:
+  AWSRegionAMI:
+    us-east-1: 
+      AMI: ami-02eac2c0129f6376b
+    us-west-1:
+      AMI: ami-074e2d6769f445be5
+Resources:
+  AmbariHdpRepoServiceSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-fizz-ambari-hdp-repo-sg'
+      GroupDescription: Ambari services managed group
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-ambari-hdp-repo-sg'
+  AmbariHdpRepoServiceSGISelf:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref AmbariHdpRepoServiceSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt 
+        - AmbariHdpRepoServiceSG
+        - GroupId
+      Description: Self
+  AmbariHdpRepoEc2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !FindInMap 
+          - AWSRegionAMI
+          - !Ref 'AWS::Region'
+          - AMI
+      InstanceInitiatedShutdownBehavior: "terminate"
+      InstanceType: "t2.micro"
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-ambari-hdp-repo'
+      SecurityGroupIds:
+        - !Ref AmbariHdpRepoServiceSG
+      KeyName: !Ref KeyName
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            VolumeSize: 25
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+           |
+            #!/bin/bash -e
+            yum install wget unzip -y
+            yum install createrepo -y
+            yum install httpd -y
+            cd /var/www/html/
+            mkdir repo
+            cd /etc/httpd/conf
+            sed -i "/#ServerName www.example.com:80/c\ServerName ambarihdp.${HostedZoneName}" /etc/httpd/conf/httpd.conf 
+            #hdprepo
+            cd /home/centos
+            curl "https://fizz-ambari-hdp-rpms.s3.amazonaws.com/ambari-2.7.5.0-0.tar.gz" -o ambari-2.7.5.0-0.tar.gz
+            curl "https://fizz-ambari-hdp-rpms.s3.amazonaws.com/HDP-3.1.4.0.tar.gz" -o HDP-3.1.4.0.tar.gz
+            tar -xvzf HDP-3.1.4.0.tar.gz 
+            mkdir hdp 
+            tar -xvzf HDP-3.1.4.0.tar.gz 
+            rm -rf HDP-3.1.4.0.tar.gz 
+            mv  HDP-3.1.4.0/* hdp/
+            chown -R root.root /home/centos/hdp
+            createrepo /home/centos/hdp
+            chmod -R o-w+r /home/centos/hdp
+            echo "[hdprepo] " > /tmp/hdp.repo
+            echo "name=hdp" >> /tmp/hdp.repo
+            echo "baseurl=http://ambarihdp.${HostedZoneName}/repo/hdp" >> /tmp/hdp.repo
+            echo "enabled=1" >> /tmp/hdp.repo
+            echo "gpgcheck=0" >> /tmp/hdp.repo
+            mv /tmp/hdp.repo /etc/yum.repos.d/
+            cd /var/www/html/repo 
+            cp -R /home/centos/hdp /var/www/html/repo/
+            cp /etc/yum.repos.d/hdp.repo /var/www/html/repo/hdp/
+            service httpd start
+            #ambarirepo
+            cd /home/centos
+            mkdir ambari 
+            mv ambari-2.7.5.0-0.tar.gz /home/centos/ambari
+            cd ambari
+            tar -xvzf ambari-2.7.5.0-0.tar.gz 
+            rm -rf ambari-2.7.5.0-0.tar.gz 
+            chown -R root.root /home/centos/ambari
+            createrepo /home/centos/ambari
+            chmod -R o-w+r /home/centos/ambari
+            echo "[ambarirepo] " > /tmp/ambari.repo
+            echo "name=ambari" >> /tmp/ambari.repo
+            echo "baseurl=http://ambarihdp.${HostedZoneName}/repo/ambari" >> /tmp/ambari.repo
+            echo "enabled=1" >> /tmp/ambari.repo
+            echo "gpgcheck=0" >> /tmp/ambari.repo
+            mv /tmp/ambari.repo /etc/yum.repos.d/
+            cd /var/www/html/repo
+            mkdir ambari
+            cp -R /home/centos/ambari /var/www/html/repo/
+            cp /etc/yum.repos.d/ambari.repo /var/www/html/repo/ambari/
+            rm -rf /home/centos/ambari
+            rm -rf /home/centos/hdp
+  AmbariHdpRepoDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub ${HostedZoneName}.
+      Comment: AmbariHdpRepo
+      Name: !Sub 'ambarihdp.${HostedZoneName}'
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+       -  !GetAtt AmbariHdpRepoEc2Instance.PrivateDnsName
+Outputs:
+  AmbariHdpRepoCNAME:
+    Description: fizz ambari hdp repo dns record
+    Value:
+      !Ref AmbariHdpRepoDNSRecord
+
+          

@@ -1,0 +1,42 @@
+1) Add Peers
+add_peer '1', CLUSTER_KEY => "ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure"
+add_peer '1', CLUSTER_KEY => "ip-172-31-87-161.ec2.internal:2181:/hbase-unsecure"
+
+2) Copy previous cluster data, if any
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure analytics:tbl_user
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_prod:tbl_message
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_prod:tbl_uid
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_group
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_uid
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_user
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_member
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_mod_prod:tbl_config
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_app_prod:tbl_app
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_group_prod:tbl_group
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_group_prod:tbl_user_group
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_user_prod:tbl_profile
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-meta
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-tree
+sudo -u hbase hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-uid
+
+
+or that doesnt work try
+
+2) Copy previous cluster data, if any
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure analytics:tbl_user
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_prod:tbl_message
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_prod:tbl_uid
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_group
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_uid
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_user
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_access_prod:tbl_member
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_mod_prod:tbl_config
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_app_prod:tbl_app
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_group_prod:tbl_group
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_group_prod:tbl_user_group
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure chat_user_prod:tbl_profile
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-meta
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-tree
+hbase org.apache.hadoop.hbase.mapreduce.CopyTable --peer.adr=ip-172-31-93-63.ec2.internal:2181:/hbase-unsecure tsdb-uid

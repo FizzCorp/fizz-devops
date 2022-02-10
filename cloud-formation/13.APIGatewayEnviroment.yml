@@ -1,0 +1,507 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build and setup fizz api gateway beanstalk enviroment
+Parameters:
+  ApplicationName:
+    Description: Please enter name of the fizz api gateway application
+    Type: String
+  EnviromentType:
+    Description: Please select the type of the enviroment
+    Type: String
+    AllowedValues:
+      - green
+      - blue
+  KeyName:
+    Description: Please select name of an existing ec2 KeyPair to enable SSH access to the instance
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  EC2InstanceType:
+    Description: Please select the compute and memory capacity of the nodes
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: must select a valid Cache Node type.
+  APIGatewaySG:
+    Description: Please select fizz api gateway security group
+    Type: AWS::EC2::SecurityGroup::GroupName
+  EC2InstanceProfile:
+    Description: Please enter fizz api gateway instance profile
+    Type: String
+  SSLCertificateArn:
+    Description: Please enter SSL Certificate Arn
+    Type: String
+  ElasticBeanStalkServiceRole:
+    Description: Please enter name of fizz api gateway role
+    Type: String
+  AzureContentModerationBaseurl:
+    Description: Please enter azure content moderation base url
+    Type: String
+  AzureContentModerationSecret:
+    Description: Please enter azure content moderation secret
+    Type: String
+  ChatBingSubscriptionKey:
+    Description: Please enter chat bing subscription key
+    Type: String
+  HbaseClientClusterDistributed:
+    Type: String
+    Default: true
+  HbaseClientQuorum:
+    Description: Please enter fizz hbase client quorum (e.g hbase.fizz-internal)
+    Type: String
+  HbaseClientZookeeperZnodeParent:
+    Description: Please enter hbase client zookeeper znode parent
+    Type: String
+    Default: /hbase-unsecure
+  ChatHbaseSessionTTL:
+    Type: Number
+    Default: 900
+  ChatHbaseNamespace:
+    Type: String
+    Default: chat_prod
+  ChatUserHbaseNamespace:
+    Type: String
+    Default: chat_user_prod
+  ChatModerationConfigCacheExpireMinutes:
+    Type: Number
+    Default: 10
+  ChatModerationConfigCacheMaxSize:
+    Type: Number
+    Default: 64
+  ChatModerationHbaseNamespace:
+    Type: String
+    Default: chat_mod_prod
+  ChatAccessHbaseNamespace:
+    Type: String
+    Default: chat_access_prod
+  GatewayKafkaServers:
+    Description: Please enter apache kafka broker endpoints
+    Type: String
+  ChatGroupHbaseNamespace:
+    Type: String
+    Default: chat_group_prod
+  ChatRedisHost:
+    Description: Please enter fizz chat redis host (e.g redis.fizz-internal)
+    Type: String
+  CleanspeakContentModerationBaseurl:
+    Description: Please enter clean speak contentmoderation base url
+    Type: String
+  CleanspeakContentModerationSecret:
+    Description: Please enter clean speak content moderation secret
+    Type: String
+  CleanspeakCMFilterBlackllistMinSeverity:
+    Type: String
+    Default: high
+    AllowedValues:
+      - mild
+      - medium
+      - high
+      - severe
+  CleanspeakCMFilterUrlsMinQuality:
+    Type: Number
+    Default: 0.75
+  ChatEmqxHost:
+    Description: Please enter fizz chat emqx host (e.g emqx.fizz-internal)
+    Type: String
+  ChatEmqxPort:
+    Type: Number
+    Default: 8080
+  ChatEmqxAppId:
+    Description: Please enter emqx username
+    Type: String
+    Default: admin
+  ChatEmqxAppSecret:
+    Description: Please enter emqx password
+    Type: String
+    Default: public
+  ChatEmqxServiceHost:
+    Description: Please enter fizz chat emqx service host (e.g emqx.fizz-internal)
+    Type: String
+  ChatEmqxServicePort:
+    Type: Number
+    Default: 3010
+  EsHost:
+    Description: Please enter ElasticSearch host url (e.g vpc-fizz-abc.us-east-1.es.amazonaws.com)
+    Type: String
+  HbaseSessionsNamespace:
+    Type: String
+    Default: gateway_prod
+  HttpAllowedCorsUrl:
+    Type: String
+    Default: .*
+  HttpDebugLogging:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  HttpPort:
+    Type: Number
+    Default: 3000
+  NgnixPort:
+    Type: Number
+    Default: 80
+  KcIngestionAuthority:
+    Description: Please enter fizz keycloak ingestion authority
+    Type: String
+    Default: publish:events
+  KcIngestionClientId:
+    Description: Please enter fizz keycloak ingestion client id
+    Type: String
+  KcIngestionId:
+    Description: Please enter fizz keycloak ingestion id
+    Type: String
+    Default: ingestion
+  KcIngestionSecret:
+    Description: Please enter fizz keycloak ingestion secret
+    Type: String
+  KcRealm:
+    Description: Please enter fizz keycloak realm
+    Type: String
+    Default: newrealm
+  KcUrl:
+    Description: Please enter fizz keycloak url
+    Type: String
+  LogLevel:
+    Type: String
+    Default: WARN
+    AllowedValues:
+      - TRACE
+      - DEBUG
+      - INFO
+      - WARN
+      - ERROR
+      - FATAL
+  TSDBHost:
+    Description: Please enter fizz tsdb host (e.g hbase.fizz-internal)
+    Type: String
+  ZTest:
+    Type: Number
+    Default: 2
+  CleanspeakContentModerationAppID:
+    Type: String
+  GatewayKafkaEventStreamTopic:
+    Type: String
+    Default: io.fizz.eventstream
+  ChatTopicSize:
+    Type: Number
+    Default: 2000
+  ChatApplicationHbaseNamespace:
+    Type: String
+    Default: chat_app_prod
+  RateLimitScopeChannelMax:
+    Type: Number
+    Default: 30
+  HttpPortInternal:
+    Type: Number
+    Default: 9310
+Mappings:
+  AWSRegionAMI:
+    us-east-1:
+      AMI: ami-02eac2c0129f6376b
+    us-west-1:
+      AMI: ami-074e2d6769f445be5
+Resources:
+  EBConfigTemplate:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName: !Ref ApplicationName
+      SolutionStackName: 64bit Amazon Linux 2 v3.2.9 running Corretto 8
+      Description: AWS ElasticBeanstalk Sample Configuration Template
+      OptionSettings:
+        #ASG Launch Config
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: !Ref EC2InstanceType
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EC2InstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref APIGatewaySG
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: EC2KeyName
+          Value: !Ref KeyName
+        #Beanstalk Enviroment
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Ref ElasticBeanStalkServiceRole
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: LoadBalanced
+        #Scaling Policy
+        - Namespace: aws:autoscaling:asg
+          OptionName: MinSize
+          Value: '1'
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: '16'
+        - Namespace: aws:autoscaling:asg
+          OptionName: Availability Zones
+          Value: Any
+        - Namespace: aws:autoscaling:trigger
+          OptionName: BreachDuration
+          Value: 5
+        - Namespace: aws:autoscaling:trigger
+          OptionName: LowerBreachScaleIncrement
+          Value: -1
+        - Namespace: aws:autoscaling:trigger
+          OptionName: LowerThreshold
+          Value: 30
+        - Namespace: aws:autoscaling:trigger
+          OptionName: UpperThreshold
+          Value: 70
+        - Namespace: aws:autoscaling:trigger
+          OptionName: MeasureName
+          Value: CPUUtilization  
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Period
+          Value: 5
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Statistic
+          Value: Maximum
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Unit
+          Value: Percent
+        #Monitoring
+        - Namespace: aws:elasticbeanstalk:healthreporting:system
+          OptionName: SystemType
+          Value: enhanced
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: true
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: DeleteOnTerminate
+          Value: 'false'
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: 7
+        #Load Balancer
+        - Namespace: aws:elb:loadbalancer
+          OptionName: CrossZone
+          Value: 'true'
+        - Namespace: aws:elb:policies
+          OptionName: Stickiness Policy
+          Value: 'true'
+        - Namespace: aws:elb:policies
+          OptionName: Stickiness Cookie Expiration
+          Value: '300'
+        - Namespace: aws:elb:listener:3000
+          OptionName: ListenerProtocol
+          Value: HTTP
+        - Namespace: aws:elb:listener:3000
+          OptionName: InstancePort
+          Value: !Ref NgnixPort
+        - Namespace: aws:elb:listener:3000
+          OptionName: InstanceProtocol
+          Value: HTTP
+        - Namespace: aws:elb:listener:9310
+          OptionName: ListenerProtocol
+          Value: HTTP
+        - Namespace: aws:elb:listener:9310
+          OptionName: InstancePort
+          Value: !Ref HttpPortInternal
+        - Namespace: aws:elb:listener:9310
+          OptionName: InstanceProtocol
+          Value: HTTP
+        - Namespace: aws:elb:listener:443
+          OptionName: ListenerProtocol
+          Value: HTTPS
+        - Namespace: aws:elb:listener:443
+          OptionName: InstancePort
+          Value: !Ref NgnixPort
+        - Namespace: aws:elb:listener:443
+          OptionName: InstanceProtocol
+          Value: HTTP
+        - Namespace: aws:elb:listener:443
+          OptionName: SSLCertificateId
+          Value: !Ref SSLCertificateArn
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: Application Healthcheck URL
+          Value: HTTP:80/v1/status
+        #Deployment Policy
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: DeploymentPolicy
+          Value: Immutable
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: RollingUpdateEnabled
+          Value: 'true'
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: RollingUpdateType
+          Value: Immutable
+        #Enabled Health logs
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs:health
+          OptionName: HealthStreamingEnabled
+          Value: true
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs:health
+          OptionName: DeleteOnTerminate
+          Value: false
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs:health
+          OptionName: RetentionInDays
+          Value: 7
+          #Enviroment Variable
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AZURE_CONTENT_MODERATION_BASEURL
+          Value: !Ref AzureContentModerationBaseurl
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AZURE_CONTENT_MODERATION_SECRET
+          Value: !Ref AzureContentModerationSecret
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_ACCESS_HBASE_NAMESPACE
+          Value: !Ref ChatAccessHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_BING_SUBSCRIPTION_KEY
+          Value: !Ref ChatBingSubscriptionKey
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HBASE_CLIENT_CLUSTER_DISTRIBUTED
+          Value: !Ref HbaseClientClusterDistributed
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HBASE_CLIENT_QUORUM
+          Value: !Ref HbaseClientQuorum
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HBASE_CLIENT_ZOOKEEPER_ZNODE_PARENT
+          Value: !Ref HbaseClientZookeeperZnodeParent
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_HBASE_SESSIONS_TTL
+          Value: !Ref ChatHbaseSessionTTL
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_HBASE_NAMESPACE
+          Value: !Ref ChatHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_USER_HBASE_NAMESPACE
+          Value: !Ref ChatUserHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_MODERATION_CONFIG_CACHE_EXPIRE_MINUTES
+          Value: !Ref ChatModerationConfigCacheExpireMinutes
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_MODERATION_CONFIG_CACHE_MAX_SIZE
+          Value: !Ref ChatModerationConfigCacheMaxSize
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_MODERATION_HBASE_NAMESPACE
+          Value: !Ref ChatModerationHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: REDIS_HOST
+          Value: !Ref ChatRedisHost
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: GATEWAY_KAFKA_SERVERS
+          Value: !Ref GatewayKafkaServers
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_KAFKA_TOPIC
+          Value: !Sub io.fizz.chat.${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: GATEWAY_KAFKA_CLUSTER_TOPIC
+          Value: !Sub io.fizz.cluster.${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_GROUP_HBASE_NAMESPACE
+          Value: !Ref ChatGroupHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLEANSPEAK_CONTENT_MODERATION_APP_ID
+          Value: !Ref CleanspeakContentModerationAppID
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLEANSPEAK_CONTENT_MODERATION_BASEURL
+          Value: !Ref CleanspeakContentModerationBaseurl
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLEANSPEAK_CONTENT_MODERATION_SECRET
+          Value: !Ref CleanspeakContentModerationSecret
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLEANSPEAK_CM_FILTER_BLACKLLIST_MIN_SEVERITY
+          Value: !Ref CleanspeakCMFilterBlackllistMinSeverity
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CLEANSPEAK_CM_FILTER_URLS_MIN_QUALITY
+          Value: !Ref CleanspeakCMFilterUrlsMinQuality
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_PUBSUB_EMQX_HOST
+          Value: !Ref ChatEmqxHost
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_PUBSUB_EMQX_PORT
+          Value: !Ref ChatEmqxPort
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_PUBSUB_EMQX_APP_ID
+          Value: !Ref ChatEmqxAppId
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_PUBSUB_EMQX_APP_SECRET
+          Value: !Ref ChatEmqxAppSecret
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_EMQX_SERVICE_HOST
+          Value: !Ref ChatEmqxServiceHost
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_EMQX_SERVICE_PORT
+          Value: !Ref ChatEmqxServicePort
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: ENV_NAME
+          Value: !Sub ${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: ES_HOST
+          Value: !Ref EsHost
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HBASE_SESSIONS_NAMESPACE
+          Value: !Ref HbaseSessionsNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HTTP_ALLOWED_CORS_URL
+          Value: !Ref HttpAllowedCorsUrl
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HTTP_DEBUG_LOGGING
+          Value: !Ref HttpDebugLogging
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HTTP_PORT
+          Value: !Ref HttpPort
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_INGESTION_AUTHORITY
+          Value: !Ref KcIngestionAuthority
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_INGESTION_CLIENT_ID
+          Value: !Ref KcIngestionClientId
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_INGESTION_ID
+          Value: !Ref KcIngestionId
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_INGESTION_SECRET
+          Value: !Ref KcIngestionSecret
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_REALM
+          Value: !Ref KcRealm
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: KC_URL
+          Value: !Ref KcUrl
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: LOG_LEVEL
+          Value: !Ref LogLevel
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: TSDB_HOST
+          Value: !Ref TSDBHost
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: ZTEST
+          Value: !Ref ZTest
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: GATEWAY_KAFKA_EVENT_STREAM_TOPIC
+          Value: !Ref GatewayKafkaEventStreamTopic
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: GATEWAY_KAFKA_CLUSTER_GROUP
+          Value: !Sub io.fizz.cluster.group.${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_TOPIC_SIZE
+          Value: !Ref ChatTopicSize
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CHAT_APPLICATION_HBASE_NAMESPACE
+          Value: !Ref ChatApplicationHbaseNamespace
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RATE_LIMIT_SCOPE_CHANNEL_MAX
+          Value: !Ref RateLimitScopeChannelMax
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: HTTP_PORT_INTERNAL
+          Value: !Ref HttpPortInternal
+  ElasticBeanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties: 
+      ApplicationName: !Ref ApplicationName
+      CNAMEPrefix: 
+        !Sub ${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+      Description: Fizz Gateway ${EnviromentType} Enviroment
+      EnvironmentName: !Sub ${AWS::StackName}-fizz-api-gateway-${EnviromentType}
+      TemplateName: !Ref EBConfigTemplate
+Outputs:
+  URL:
+    Description: URL of the AWS Elastic Beanstalk Environment
+    Value: !GetAtt [ElasticBeanstalkEnvironment, EndpointURL]

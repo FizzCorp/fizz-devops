@@ -1,0 +1,23 @@
+{
+  "name": "rabbitmq",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "async": "^3.1.0",
+    "aws-sdk": "^2.308.0",
+    "base-64": "^0.1.0",
+    "encodeurl": "^1.0.2",
+    "inquirer": "^6.2.0",
+    "ip-cidr": "^2.0.6",
+    "is-ip": "^2.0.0",
+    "password-validator": "^4.1.1",
+    "shelljs": "^0.8.2",
+    "uuid": "^3.3.2"
+  }
+}

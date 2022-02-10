@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  DBInstanceName:
+    Type: String
+  DBUsername:
+    Type: String
+  DBPassword:
+    Type: String
+  DBName:
+    Type: String
+    Default: keycloak
+Resources: 
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-sg'
+      GroupDescription: CloudFormation SG test
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-sg'
+  SGSelfSGI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref SecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt 
+        - SecurityGroup
+        - GroupId
+      Description: Self allowance for within instances communication
+  CustomIPSGI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref SecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+      Description: Default Office MainNet IP
+  DBInstance:
+      DeletionPolicy: Snapshot # default
+      #UpdateReplacePolicy: Snapshot
+      Type: 'AWS::RDS::DBInstance'
+      Properties:
+        AllocatedStorage: "100"
+        #AllowMajorVersionUpgrade: false
+        #AutoMinorVersionUpgrade: true
+        DBInstanceClass: 'db.t2.micro'
+        Engine: postgres
+        EngineVersion: '11.5'
+        MasterUsername: !Ref DBUsername
+        MasterUserPassword: !Ref DBPassword
+        DBInstanceIdentifier: !Ref DBInstanceName
+        DBName: !Ref DBName
+        #MultiAZ: !Ref DBMultiAZ
+        #PreferredBackupWindow: !Ref PreferredBackupWindow
+        #PreferredMaintenanceWindow: !Ref PreferredMaintenanceWindow
+        #StorageType: gp2
+        VPCSecurityGroups:
+          - !GetAtt 
+            - SecurityGroup
+            - GroupId

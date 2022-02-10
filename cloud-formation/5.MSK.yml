@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build msk cluster
+Parameters:
+    ApacheKafkaVersion:
+        Description: Please select the Apache Kafka version that you want on the brokers (2.2.1 is recommended)
+        Type: String
+        Default: 2.2.1
+        AllowedValues:
+        - 2.4.1
+        - 2.3.1
+        - 2.2.1
+        - 2.1.1
+    NumberOfBrokersPerAZ:
+        Description: Please enter the number of Apache Kafka brokers to be deployed in each availability zone
+        Type: String
+        Default: 2
+        ConstraintDescription: Minimum 1. After you create the cluster, you can only increase the number of brokers per Availability Zone
+    BrokerInstanceType:
+        Description: Please select the compute, memory, and storage capabilities of the nodes
+        Type: String
+        Default: kafka.t3.small
+        AllowedValues:
+        - kafka.t3.small
+        - kafka.m5.large
+        - kafka.m5.xlarge
+        - kafka.m5.2xlarge
+        - kafka.m5.4xlarge
+        - kafka.m5.12xlarge
+        - kafka.m5.24xlarge
+    MSKSubnetIds:
+      Description: Please select the subnet ids brokers will be hosted in, please chose exactly 2 subnets
+      Type: List<AWS::EC2::Subnet::Id>
+    ComponentsSG:
+        Description: Please select fizz components security group
+        Type: List<AWS::EC2::SecurityGroup::Id>
+    EBSVolumeSize:
+        Description: EBS storage volume per broker in GiB.
+        Type: String
+        Default: 100
+        ConstraintDescription: Minimum 1 GiB, maximum 16384 GiB
+Resources:
+    MSKCluster:
+        Type: 'AWS::MSK::Cluster'
+        Properties:
+          ClusterName: !Sub '${AWS::StackName}-fizz-gateway-event-bus'
+          KafkaVersion: !Ref ApacheKafkaVersion
+          NumberOfBrokerNodes: !Ref NumberOfBrokersPerAZ
+          EncryptionInfo:
+            EncryptionInTransit:
+              ClientBroker: PLAINTEXT
+              InCluster: false
+          BrokerNodeGroupInfo:
+            InstanceType: !Ref BrokerInstanceType
+            ClientSubnets: !Ref MSKSubnetIds
+            SecurityGroups: !Ref ComponentsSG
+            StorageInfo:
+                EBSStorageInfo:
+                    VolumeSize: !Ref EBSVolumeSize

@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Build fizz redis cluster
+Parameters:
+  RedisClusterNodeType:
+    Description: Please select the compute and memory capacity of the nodes in the redis cluster
+    Type: String
+    Default: cache.t2.micro
+    AllowedValues:
+      - cache.t2.micro
+      - cache.t2.small
+      - cache.t2.medium
+    ConstraintDescription: must select a valid cache node type.
+  FizzOfficeMainIP:
+    Description: Please enter fizz main net ip address
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    ConstraintDescription: must be a valid IP range of the form x.x.x.x.
+  FizzOfficeBackupIP:
+    Description: Please enter fizz backup net ip address
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    ConstraintDescription: must be a valid IP range of the form x.x.x.x.
+  APIGatewaySG:
+    Description: Please select fizz api gateway security group
+    Type: AWS::EC2::SecurityGroup::Id
+  EMRmasterSG:
+    Description: Please select emr master security group
+    Type: AWS::EC2::SecurityGroup::Id
+  EMRslaveSG:
+    Description: Please select emr slave security group
+    Type: AWS::EC2::SecurityGroup::Id
+Resources:
+  ComponentsSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-fizz-components-sg'
+      GroupDescription: Fizz components security group
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-fizz-components-sg'
+  ComponentsSGIOfficeMainIP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      CidrIp: !Sub ${FizzOfficeMainIP}/32
+      Description: Fizz office ip
+  ComponentsSGIOfficeBackupIP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      CidrIp: !Sub ${FizzOfficeBackupIP}/32
+      Description: Fizz office ip
+  ComponentsSGAPIGatewaySG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref APIGatewaySG
+      Description: Fizz api gateway sg
+  ComponentsSGEMRmasterSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref EMRmasterSG
+      Description: Fizz emr master sg
+  ComponentsSGEMRslaveSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref EMRslaveSG
+      Description: Fizz emr slave sg
+  ComponentsSGISelf:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupName: !Ref ComponentsSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt 
+        - ComponentsSG
+        - GroupId
+      Description: Self
+  RedisClusterParameterGroup:
+    Type: 'AWS::ElastiCache::ParameterGroup'
+    Properties: 
+      CacheParameterGroupFamily: redis6.x
+      Description: Redis no eviction
+      Properties: 
+        maxmemory-policy: 'noeviction'
+  RedisReplicationGroup:
+    Type: 'AWS::ElastiCache::ReplicationGroup'
+    Properties:
+      ReplicationGroupDescription: Fizz no eviction redis cluster.
+      AutomaticFailoverEnabled: false
+      AutoMinorVersionUpgrade: false
+      CacheNodeType: !Ref RedisClusterNodeType
+      CacheParameterGroupName: !Ref RedisClusterParameterGroup
+      Engine: redis
+      NumCacheClusters: 1
+      SecurityGroupIds: 
+        - !GetAtt 
+          - ComponentsSG
+          - GroupId
+      ReplicationGroupId: !Sub '${AWS::StackName}-fizz-noeviction'
+Outputs:
+  RedisURL:
+    Description: Redis cluster url
+    Value: 
+      !Sub
+        - ${RedisAddress}:${RedisPort}
+        - RedisAddress: !GetAtt [RedisReplicationGroup, PrimaryEndPoint.Address]
+          RedisPort: !GetAtt [RedisReplicationGroup, PrimaryEndPoint.Port]
